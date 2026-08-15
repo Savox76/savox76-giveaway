@@ -29,6 +29,12 @@ Unter Linux oder macOS kann der Python-Befehl `python3` heißen. Beim ersten Sta
 Programmordner automatisch eine abgeschlossene `.venv`-Umgebung erstellt und mit allen benötigten
 Python-Paketen eingerichtet. Danach öffnet sich die lokale Steuerung im Browser.
 
+Das Terminal bleibt während der Nutzung geöffnet und zeigt die aktiven Adressen an. Falls der
+Start fehlschlägt, bleibt das Fenster unter Windows ebenfalls geöffnet. Die genaue Fehlermeldung
+wird zusätzlich als `Savox76Giveaway.log` direkt im Programmordner gespeichert. Das Python-Skript
+darf nicht direkt innerhalb der ZIP-Vorschau gestartet werden; das Archiv muss vollständig
+entpackt sein.
+
 ## Lokale Adressen
 
 - Steuerung: `http://127.0.0.1:8766/control`

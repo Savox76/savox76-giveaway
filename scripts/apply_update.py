@@ -182,7 +182,7 @@ def restart(python: Path, target: Path) -> None:
     command = [str(python), str(target / ENTRYPOINT_NAME)]
     options: dict[str, object] = {"cwd": str(target), "close_fds": True}
     if sys.platform == "win32":
-        options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NEW_CONSOLE
     else:
         options["start_new_session"] = True
         options["stdout"] = subprocess.DEVNULL

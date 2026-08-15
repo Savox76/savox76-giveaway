@@ -20,5 +20,6 @@ config.json
 release-artifacts/
 .updates/
 .savox-update.json
+Savox76Giveaway.log
 .DS_Store
 Thumbs.db

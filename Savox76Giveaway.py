@@ -1,15 +1,41 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import tomllib
+import traceback
 import venv
+from datetime import UTC, datetime
 from pathlib import Path
 
 MINIMUM_PYTHON = (3, 11)
 ROOT = Path(__file__).resolve().parent
 VENV = ROOT / ".venv"
+LOG_FILE = ROOT / "Savox76Giveaway.log"
+REQUIRED_FILES = (
+    "pyproject.toml",
+    "backend/savox_giveaway/__main__.py",
+    "frontend/dist/index.html",
+    "scripts/apply_update.py",
+)
+
+
+def write_log(message: str) -> None:
+    try:
+        with LOG_FILE.open("a", encoding="utf-8") as stream:
+            stream.write(f"{datetime.now(UTC).isoformat()} {message.rstrip()}\n")
+    except OSError:
+        pass
+
+
+def validate_installation(root: Path = ROOT) -> None:
+    missing = [name for name in REQUIRED_FILES if not (root / name).is_file()]
+    if missing:
+        names = ", ".join(missing)
+        raise RuntimeError(
+            "Programmdateien fehlen. Bitte das heruntergeladene ZIP zuerst vollständig in einen "
+            f"eigenen Ordner entpacken und dort Savox76Giveaway.py starten. Fehlend: {names}"
+        )
 
 
 def venv_python() -> Path:
@@ -39,6 +65,7 @@ def environment_is_current(python: Path, version: str) -> bool:
 
 
 def prepare_environment() -> Path:
+    validate_installation()
     if sys.version_info < MINIMUM_PYTHON:
         required = ".".join(map(str, MINIMUM_PYTHON))
         raise RuntimeError(f"Python {required} oder neuer wird benötigt.")
@@ -66,16 +93,48 @@ def prepare_environment() -> Path:
     return python
 
 
-def main() -> None:
+def run_server(python: Path) -> int:
+    print("Starte den lokalen Giveaway-Server …", flush=True)
+    print("Dieses Terminal bitte geöffnet lassen, solange das Tool benutzt wird.\n", flush=True)
+    try:
+        result = subprocess.run(
+            [str(python), "-m", "savox_giveaway"],
+            cwd=ROOT,
+            check=False,
+        )
+    except KeyboardInterrupt:
+        print("\nSavox76 Giveaway wurde beendet.", flush=True)
+        return 0
+    return result.returncode
+
+
+def pause_after_error() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        input("\nDas Terminal bleibt zur Fehleranzeige geöffnet. Enter drücken zum Schließen …")
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+
+def main() -> int:
     python = prepare_environment()
-    os.execv(str(python), [str(python), "-m", "savox_giveaway"])
+    exit_code = run_server(python)
+    if exit_code:
+        raise RuntimeError(
+            f"Der lokale Server wurde mit Fehlercode {exit_code} beendet. "
+            f"Weitere Hinweise stehen in {LOG_FILE.name}."
+        )
+    return 0
 
 
 if __name__ == "__main__":
     try:
-        main()
+        raise SystemExit(main())
     except Exception as exc:
+        details = traceback.format_exc()
+        write_log(details)
         print(f"\nSavox76 Giveaway konnte nicht gestartet werden:\n{exc}", file=sys.stderr)
-        if sys.platform == "win32" and sys.stdin.isatty():
-            input("\nEnter drücken, um das Fenster zu schließen …")
+        print(f"Fehlerprotokoll: {LOG_FILE}", file=sys.stderr)
+        pause_after_error()
         raise SystemExit(1) from exc
