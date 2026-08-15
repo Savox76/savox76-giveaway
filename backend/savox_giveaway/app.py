@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import __version__
-from .config import AppSettings, ConfigStore
+from .config import DEFAULT_SERVER_PORT, AppSettings, ConfigStore
 from .events import EventBus
 from .secrets import SecretStore
 from .twitch import TwitchService
@@ -34,6 +34,7 @@ class SettingsPayload(BaseModel):
     channel_login: str = Field(default="savox76", max_length=25)
     twitch_client_id: str = Field(default="", max_length=80)
     twitch_client_secret: str | None = Field(default=None, max_length=200)
+    server_port: int = Field(default=DEFAULT_SERVER_PORT, ge=1024, le=65535)
     github_owner: str = Field(default="Savox76", max_length=100)
     github_repo: str = Field(default="savox76-giveaway", max_length=100)
     auto_update: bool = True
@@ -126,11 +127,10 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
 
     @app.put("/api/settings")
     async def save_settings(payload: SettingsPayload) -> dict[str, Any]:
-        current = app_state.config.load()
         settings = AppSettings(
             channel_login=payload.channel_login,
             twitch_client_id=payload.twitch_client_id,
-            twitch_redirect_uri=current.twitch_redirect_uri,
+            server_port=payload.server_port,
             github_owner=payload.github_owner,
             github_repo=payload.github_repo,
             auto_update=payload.auto_update,

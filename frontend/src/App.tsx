@@ -60,6 +60,7 @@ type BackendSettings = {
   channel_login: string;
   twitch_client_id: string;
   twitch_client_secret_set: boolean;
+  server_port: number;
   github_owner: string;
   github_repo: string;
   auto_update: boolean;
@@ -79,6 +80,7 @@ const DEFAULT_BACKEND_SETTINGS: BackendSettings = {
   channel_login: "savox76",
   twitch_client_id: "",
   twitch_client_secret_set: false,
+  server_port: 8766,
   github_owner: "Savox76",
   github_repo: "savox76-giveaway",
   auto_update: true,
@@ -1023,7 +1025,7 @@ export default function Home() {
   const [twitchSecretInput, setTwitchSecretInput] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.2.0");
+  const [appVersion, setAppVersion] = useState("0.2.1");
   const countdownTimerRef = useRef<number | null>(null);
   const claimTimerRef = useRef<number | null>(null);
   const battleStartedAtRef = useRef<number | null>(null);
@@ -1271,6 +1273,7 @@ export default function Home() {
           channel_login: channel,
           twitch_client_id: backendSettings.twitch_client_id,
           twitch_client_secret: twitchSecretInput || null,
+          server_port: backendSettings.server_port,
           github_owner: backendSettings.github_owner,
           github_repo: backendSettings.github_repo,
           auto_update: backendSettings.auto_update,
@@ -1281,7 +1284,7 @@ export default function Home() {
       if (!response.ok) throw new Error(payload.detail || "Speichern fehlgeschlagen");
       setBackendSettings(payload as BackendSettings);
       setTwitchSecretInput("");
-      setIntegrationMessage("Sicher lokal gespeichert.");
+      setIntegrationMessage("Sicher lokal gespeichert. Eine Portänderung wird nach dem Neustart aktiv.");
       saveChannel();
     } catch (error) {
       setIntegrationMessage(error instanceof Error ? error.message : "Speichern fehlgeschlagen");
@@ -1665,8 +1668,9 @@ export default function Home() {
           <div className="integration-grid">
             <label><span>GITHUB-BENUTZER</span><input value={backendSettings.github_owner} onChange={(event) => setBackendSettings((current) => ({ ...current, github_owner: event.target.value }))} /></label>
             <label><span>REPOSITORY</span><input value={backendSettings.github_repo} onChange={(event) => setBackendSettings((current) => ({ ...current, github_repo: event.target.value }))} /></label>
+            <label><span>LOKALER SERVER-PORT</span><input type="number" min="1024" max="65535" value={backendSettings.server_port} onChange={(event) => setBackendSettings((current) => ({ ...current, server_port: Number(event.target.value) }))} /></label>
           </div>
-          <p className="integration-note">Öffentliches Repository · Updateabruf ohne GitHub-Token · universelles Python-Paket</p>
+          <p className="integration-note">Öffentliches Repository · Updateabruf ohne GitHub-Token · universelles Python-Paket<br />Portänderungen werden nach einem Neustart aktiv. Twitch Redirect: http://127.0.0.1:{backendSettings.server_port || 8766}/api/twitch/callback</p>
           <label className="toggle-field"><input type="checkbox" checked={backendSettings.auto_update} onChange={(event) => setBackendSettings((current) => ({ ...current, auto_update: event.target.checked }))} /><span>Neue geprüfte Python-Releases automatisch installieren und neu starten</span></label>
           <div className={`update-card ${updateStatus.available ? "available" : ""}`}><div><span>INSTALLIERTE VERSION</span><b>v{appVersion}</b></div><p>{updateStatus.available ? `Version v${updateStatus.version} ist verfügbar.` : "Keine neuere geprüfte Version erkannt."}</p></div>
           <div className="integration-actions"><button type="button" onClick={saveIntegrationSettings}>EINSTELLUNGEN SPEICHERN</button><button type="button" onClick={checkForUpdates}>JETZT PRÜFEN</button>{updateStatus.available && <button className="update-now" type="button" onClick={installUpdate}>UPDATE INSTALLIEREN</button>}</div>

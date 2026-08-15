@@ -31,12 +31,14 @@ Python-Paketen eingerichtet. Danach öffnet sich die lokale Steuerung im Browser
 
 ## Lokale Adressen
 
-- Steuerung: `http://127.0.0.1:8765/control`
-- OBS-Browserquelle: `http://127.0.0.1:8765/overlay`
+- Steuerung: `http://127.0.0.1:8766/control`
+- OBS-Browserquelle: `http://127.0.0.1:8766/overlay`
 - empfohlene OBS-Größe: 1920 × 1080
 
 Der Server lauscht ausschließlich auf `127.0.0.1` und ist nicht öffentlich oder im Heimnetz
-erreichbar.
+erreichbar. Der Port lässt sich unter **GitHub & Updates** ändern. Nach dem Speichern muss das
+Tool neu gestartet werden; anschließend müssen auch die OBS-Adresse und die OAuth Redirect URL
+bei Twitch auf den gewählten Port angepasst werden.
 
 ## Automatische Updates
 
@@ -61,7 +63,7 @@ den manuellen Download des neuen Python-ZIPs. Ab `v0.2.0` funktionieren weitere 
 
 Die Twitch-Anbindung verwendet EventSub WebSocket und die Helix Chat API. Die Anleitung steht in
 [docs/TWITCH_SETUP.md](docs/TWITCH_SETUP.md). Als OAuth Redirect URL muss exakt
-`http://127.0.0.1:8765/api/twitch/callback` eingetragen werden.
+`http://127.0.0.1:8766/api/twitch/callback` eingetragen werden.
 
 ## Entwicklung
 
