@@ -20,7 +20,7 @@ def test_local_surfaces_and_status(tmp_path):
 
     status = client.get("/api/status")
     assert status.status_code == 200
-    assert status.json()["version"] == "0.2.4"
+    assert status.json()["version"] == "0.2.5"
     assert status.json()["mode"] == "python"
     assert status.json()["twitch"]["connected"] is False
 

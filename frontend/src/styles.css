@@ -31,7 +31,7 @@ button { font: inherit; }
 .space-canvas canvas { width: 100%; height: 100%; display: block; }
 .space-canvas[data-webgl="unavailable"] + .fallback-scene { opacity: 1; }
 .fallback-scene { position: absolute; inset: 0; z-index: 2; overflow: hidden; opacity: 0; transition: opacity .25s ease; background: radial-gradient(circle at 50% 48%, transparent 0 31%, rgba(0, 1, 4, .2) 72%, rgba(0, 1, 4, .48) 100%); pointer-events: none; }
-.fallback-sun { position: absolute; right: 7%; top: 7%; width: clamp(88px, 9vw, 152px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, #fff 0 3%, #fff8df 5%, rgba(255, 205, 130, .86) 10%, rgba(255, 163, 78, .28) 29%, transparent 72%); filter: blur(.25px); box-shadow: 0 0 62px rgba(255, 196, 112, .34), 0 0 130px rgba(255, 151, 62, .14); }
+.fallback-sun { position: absolute; right: 4%; top: 3%; width: clamp(165px, 17vw, 285px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, #fff 0 3%, #fff8df 5%, rgba(255, 205, 130, .86) 10%, rgba(255, 163, 78, .28) 29%, transparent 72%); filter: blur(.25px); box-shadow: 0 0 62px rgba(255, 196, 112, .34), 0 0 130px rgba(255, 151, 62, .14); }
 .fallback-planet { position: absolute; z-index: 0; border-radius: 50%; }
 .fallback-planet-ringed { left: -9%; top: 24%; width: clamp(210px, 24vw, 390px); aspect-ratio: 1; background: repeating-linear-gradient(174deg, #233b43 0 10px, #4e6970 12px 18px, #172a31 20px 33px); filter: saturate(.72) contrast(1.2); box-shadow: inset -88px -18px 100px rgba(0, 2, 7, .94), inset 18px 8px 25px rgba(170, 217, 225, .12), 0 0 18px rgba(94, 169, 181, .08); }
 .fallback-planet-ringed i { display: none; }
