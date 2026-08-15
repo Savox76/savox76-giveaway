@@ -62,7 +62,6 @@ type BackendSettings = {
   twitch_client_secret_set: boolean;
   github_owner: string;
   github_repo: string;
-  github_token_set: boolean;
   auto_update: boolean;
   open_browser_on_start: boolean;
 };
@@ -82,7 +81,6 @@ const DEFAULT_BACKEND_SETTINGS: BackendSettings = {
   twitch_client_secret_set: false,
   github_owner: "Savox76",
   github_repo: "savox76-giveaway",
-  github_token_set: false,
   auto_update: true,
   open_browser_on_start: true,
 };
@@ -1023,10 +1021,9 @@ export default function Home() {
   const [twitchStatus, setTwitchStatus] = useState<TwitchStatus>(EMPTY_TWITCH_STATUS);
   const [backendSettings, setBackendSettings] = useState<BackendSettings>(DEFAULT_BACKEND_SETTINGS);
   const [twitchSecretInput, setTwitchSecretInput] = useState("");
-  const [githubTokenInput, setGithubTokenInput] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.1.0");
+  const [appVersion, setAppVersion] = useState("0.2.0");
   const countdownTimerRef = useRef<number | null>(null);
   const claimTimerRef = useRef<number | null>(null);
   const battleStartedAtRef = useRef<number | null>(null);
@@ -1276,7 +1273,6 @@ export default function Home() {
           twitch_client_secret: twitchSecretInput || null,
           github_owner: backendSettings.github_owner,
           github_repo: backendSettings.github_repo,
-          github_token: githubTokenInput || null,
           auto_update: backendSettings.auto_update,
           open_browser_on_start: backendSettings.open_browser_on_start,
         }),
@@ -1285,7 +1281,6 @@ export default function Home() {
       if (!response.ok) throw new Error(payload.detail || "Speichern fehlgeschlagen");
       setBackendSettings(payload as BackendSettings);
       setTwitchSecretInput("");
-      setGithubTokenInput("");
       setIntegrationMessage("Sicher lokal gespeichert.");
       saveChannel();
     } catch (error) {
@@ -1671,8 +1666,8 @@ export default function Home() {
             <label><span>GITHUB-BENUTZER</span><input value={backendSettings.github_owner} onChange={(event) => setBackendSettings((current) => ({ ...current, github_owner: event.target.value }))} /></label>
             <label><span>REPOSITORY</span><input value={backendSettings.github_repo} onChange={(event) => setBackendSettings((current) => ({ ...current, github_repo: event.target.value }))} /></label>
           </div>
-          <label className="secret-field"><span>LESE-TOKEN FÜR PRIVATES REPOSITORY</span><input type="password" value={githubTokenInput} onChange={(event) => setGithubTokenInput(event.target.value)} placeholder={backendSettings.github_token_set ? "Sicher gespeichert – leer lassen zum Behalten" : "Fine-grained Token · Contents: read"} /></label>
-          <label className="toggle-field"><input type="checkbox" checked={backendSettings.auto_update} onChange={(event) => setBackendSettings((current) => ({ ...current, auto_update: event.target.checked }))} /><span>Neue geprüfte Releases automatisch installieren</span></label>
+          <p className="integration-note">Öffentliches Repository · Updateabruf ohne GitHub-Token · universelles Python-Paket</p>
+          <label className="toggle-field"><input type="checkbox" checked={backendSettings.auto_update} onChange={(event) => setBackendSettings((current) => ({ ...current, auto_update: event.target.checked }))} /><span>Neue geprüfte Python-Releases automatisch installieren und neu starten</span></label>
           <div className={`update-card ${updateStatus.available ? "available" : ""}`}><div><span>INSTALLIERTE VERSION</span><b>v{appVersion}</b></div><p>{updateStatus.available ? `Version v${updateStatus.version} ist verfügbar.` : "Keine neuere geprüfte Version erkannt."}</p></div>
           <div className="integration-actions"><button type="button" onClick={saveIntegrationSettings}>EINSTELLUNGEN SPEICHERN</button><button type="button" onClick={checkForUpdates}>JETZT PRÜFEN</button>{updateStatus.available && <button className="update-now" type="button" onClick={installUpdate}>UPDATE INSTALLIEREN</button>}</div>
           {integrationMessage && <p className="integration-message">{integrationMessage}</p>}

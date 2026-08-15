@@ -36,7 +36,6 @@ class SettingsPayload(BaseModel):
     twitch_client_secret: str | None = Field(default=None, max_length=200)
     github_owner: str = Field(default="Savox76", max_length=100)
     github_repo: str = Field(default="savox76-giveaway", max_length=100)
-    github_token: str | None = Field(default=None, max_length=300)
     auto_update: bool = True
     open_browser_on_start: bool = True
 
@@ -60,7 +59,6 @@ class ApplicationState:
             owner=settings.github_owner,
             repo=settings.github_repo,
             current_version=__version__,
-            token=self.secrets.get("github_token"),
         )
 
     async def check_update(self) -> UpdateInfo | None:
@@ -73,7 +71,7 @@ class ApplicationState:
             try:
                 update = await self.check_update()
                 updater = self.updater()
-                if update and self.config.load().auto_update and updater.frozen:
+                if update and self.config.load().auto_update:
                     await self.events.publish("update.installing", {"version": update.version})
                     staged = await updater.download_and_stage(update)
                     updater.launch_installer(staged)
@@ -116,19 +114,14 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
             "version": __version__,
             "twitch": app_state.twitch.status.as_dict(),
             "update": update_to_dict(app_state.latest_update),
-            "mode": "installed" if app_state.updater().frozen else "source",
+            "mode": "python",
         }
 
     @app.get("/api/settings")
     async def get_settings() -> dict[str, Any]:
         settings = app_state.config.load()
         payload = asdict(settings)
-        payload.update(
-            {
-                "twitch_client_secret_set": bool(app_state.secrets.get("twitch_client_secret")),
-                "github_token_set": bool(app_state.secrets.get("github_token")),
-            }
-        )
+        payload["twitch_client_secret_set"] = bool(app_state.secrets.get("twitch_client_secret"))
         return payload
 
     @app.put("/api/settings")
@@ -146,8 +139,6 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         app_state.config.save(settings)
         if payload.twitch_client_secret is not None:
             app_state.secrets.set("twitch_client_secret", payload.twitch_client_secret.strip())
-        if payload.github_token is not None:
-            app_state.secrets.set("github_token", payload.github_token.strip())
         app_state.twitch.refresh_configuration_status()
         await app_state.twitch.restart()
         return await get_settings()

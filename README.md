@@ -1,32 +1,67 @@
 # Savox76 Giveaway System
 
-Lokales, plattformübergreifendes Twitch-Giveaway für OBS. Zuschauer treten per frei wählbarem
-Chatbefehl bei und kämpfen als Fregatten oder Cruiser in einer 3D-Weltraumarena.
+Lokales Twitch-Giveaway für OBS mit frei wählbarem Chatbefehl und einem dreidimensionalen
+Weltraumkampf zwischen Fregatten und Cruisern.
 
-## Adressen
+## Voraussetzungen
+
+- Python 3.11 oder neuer
+- eine Internetverbindung für die einmalige Einrichtung und Twitch
+- OBS Studio mit Browserquelle
+
+Node.js, GitHub CLI und betriebssystemspezifische Programmdateien werden für die Nutzung nicht
+benötigt. Es gibt nur noch ein universelles Python-Paket.
+
+## Start
+
+1. Das aktuelle `Savox76Giveaway-python.zip` aus den
+   [GitHub Releases](https://github.com/Savox76/savox76-giveaway/releases/latest) herunterladen.
+2. ZIP vollständig in einen eigenen Ordner entpacken.
+3. `Savox76Giveaway.py` mit Python starten.
+
+Alternativ im Terminal:
+
+```bash
+python Savox76Giveaway.py
+```
+
+Unter Linux oder macOS kann der Python-Befehl `python3` heißen. Beim ersten Start wird im
+Programmordner automatisch eine abgeschlossene `.venv`-Umgebung erstellt und mit allen benötigten
+Python-Paketen eingerichtet. Danach öffnet sich die lokale Steuerung im Browser.
+
+## Lokale Adressen
 
 - Steuerung: `http://127.0.0.1:8765/control`
 - OBS-Browserquelle: `http://127.0.0.1:8765/overlay`
-- Empfohlene OBS-Größe: 1920 × 1080
+- empfohlene OBS-Größe: 1920 × 1080
 
-Der Server lauscht nur auf `127.0.0.1`. Die Oberfläche ist daher nicht öffentlich und nicht
-aus dem Heimnetz erreichbar.
+Der Server lauscht ausschließlich auf `127.0.0.1` und ist nicht öffentlich oder im Heimnetz
+erreichbar.
 
-## Schnellstart aus dem Quellcode
+## Automatische Updates
 
-### Windows
+Das Tool prüft beim Start und danach alle sechs Stunden das öffentliche GitHub-Repository. Wenn
+eine neuere geprüfte Version vorliegt, geschieht automatisch Folgendes:
 
-`start-windows.bat` doppelt anklicken.
+1. das einzige universelle Python-ZIP und seine SHA-256-Prüfsumme werden geladen;
+2. das Archiv und jede enthaltene Programmdatei werden geprüft;
+3. die bisher verwalteten Dateien werden unter `.updates/backups` gesichert;
+4. ausschließlich Programmdateien werden ersetzt oder entfernt;
+5. die lokale Python-Umgebung wird bei Bedarf aktualisiert;
+6. das Giveaway-Tool startet automatisch neu.
 
-### Linux oder macOS
+Die letzten drei Sicherungen bleiben erhalten. Lokale Twitch-Zugangsdaten, Einstellungen, die
+`.venv`-Umgebung und nicht vom Programm verwaltete Dateien werden nicht überschrieben. Da das
+Repository öffentlich ist, wird kein GitHub-Token benötigt.
 
-```bash
-chmod +x start-linux-macos.sh
-./start-linux-macos.sh
-```
+Der Wechsel von der alten ausführbaren Version `v0.1.0` auf die Python-Version erfordert einmalig
+den manuellen Download des neuen Python-ZIPs. Ab `v0.2.0` funktionieren weitere Updates automatisch.
 
-Python 3.11 oder neuer wird benötigt. Node.js wird beim Start aus dem Quellcode einmalig zum
-Bauen der 3D-Oberfläche verwendet. Fertige GitHub-Releases benötigen weder Python noch Node.js.
+## Twitch einmalig einrichten
+
+Die Twitch-Anbindung verwendet EventSub WebSocket und die Helix Chat API. Die Anleitung steht in
+[docs/TWITCH_SETUP.md](docs/TWITCH_SETUP.md). Als OAuth Redirect URL muss exakt
+`http://127.0.0.1:8765/api/twitch/callback` eingetragen werden.
 
 ## Entwicklung
 
@@ -37,27 +72,19 @@ cd frontend
 npm install
 npm run build
 cd ..
+ruff check backend scripts Savox76Giveaway.py
 pytest
-python -m savox_giveaway
+python Savox76Giveaway.py
 ```
 
-## Versionen und automatische Updates
+Neue Veröffentlichungen entstehen nach einer Versionsänderung in `pyproject.toml` automatisch:
+GitHub prüft Backend und Frontend, erzeugt das Versionstag und veröffentlicht genau ein
+`Savox76Giveaway-python.zip` samt SHA-256-Datei.
 
-Jede Änderung wird als Git-Commit sichtbar. Tags wie `v0.1.0` erzeugen über GitHub Actions
-automatisch geprüfte Pakete für Windows, Linux und macOS. Das installierte Tool prüft GitHub
-alle sechs Stunden und beim Start auf eine neuere Release-Version. Es lädt nur das passende
-Paket, prüft dessen SHA-256-Wert, sichert die alte Programmdatei und startet nach dem Austausch neu.
+## Lizenz und Datenschutz
 
-Bei einem privaten Repository muss lokal ein Fine-grained GitHub Token mit ausschließlich
-`Contents: read` hinterlegt werden. Wird das Repository später öffentlich, ist kein Token mehr nötig.
+Das Projekt steht unter der [Savox76 Non-Commercial Source License](LICENSE). Kommerzielle Nutzung
+ist ohne vorherige schriftliche Genehmigung nicht erlaubt.
 
-## Twitch
-
-Die Twitch-Anbindung verwendet EventSub WebSocket für eingehende Nachrichten und die Helix Chat
-API für Bestätigungen, Anmeldeschluss, Gewinner und Claim-Ergebnis. Die einmalige Einrichtung ist
-in [docs/TWITCH_SETUP.md](docs/TWITCH_SETUP.md) beschrieben.
-
-## Datenschutz
-
-Konfiguration und Tokens werden nicht eingecheckt. Zugangsdaten liegen im Schlüsselspeicher des
-Betriebssystems; Kampfhistorie und Darstellungswerte bleiben lokal auf dem Streaming-PC.
+Konfiguration und Twitch-Tokens werden nicht eingecheckt. Geheimnisse liegen im Schlüsselspeicher
+des Betriebssystems; Darstellungswerte und Kampfhistorie bleiben lokal auf dem Streaming-PC.

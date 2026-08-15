@@ -230,6 +230,7 @@ button:disabled { opacity: .36; cursor: not-allowed; }
 .integration-grid input, .secret-field input { min-width: 0; width: 100%; border: 1px solid rgba(82, 223, 244, .18); background: rgba(2, 9, 14, .7); color: #d9f1f5; outline: none; padding: 11px; font: 550 10px var(--font-geist-mono), monospace; letter-spacing: 0; }
 .integration-grid input:focus, .secret-field input:focus { border-color: rgba(82, 223, 244, .55); }
 .secret-field { margin-top: 12px; }
+.integration-note { margin: 12px 0 0; color: #6d929b; font: 550 8px/1.55 var(--font-geist-mono), monospace; }
 .integration-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
 .integration-actions button { min-height: 34px; padding: 0 12px; border: 1px solid rgba(82, 223, 244, .22); background: rgba(82, 223, 244, .055); color: #8bc8d1; font: 650 8px var(--font-geist-mono), monospace; letter-spacing: .08em; cursor: pointer; }
 .integration-actions .update-now { border-color: rgba(75, 228, 154, .38); color: #9bf0c2; background: rgba(75, 228, 154, .08); }
