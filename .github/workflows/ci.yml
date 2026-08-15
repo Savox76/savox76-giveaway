@@ -30,7 +30,7 @@ jobs:
       - run: npm run build
         working-directory: frontend
       - run: ruff check backend scripts Savox76Giveaway.py
-      - run: pytest
+      - run: python -m pytest
 
   tag-version:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -67,7 +67,7 @@ jobs:
       - run: npm run build
         working-directory: frontend
       - run: ruff check backend scripts Savox76Giveaway.py
-      - run: pytest
+      - run: python -m pytest
       - name: Universelles Python-Paket erstellen
         run: python scripts/package_release.py
       - name: GitHub Release veröffentlichen
