@@ -102,4 +102,4 @@ jobs:
       - name: GitHub Release veröffentlichen
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ needs.prepare.outputs.tag }}" release-artifacts/* --generate-notes --verify-tag
+        run: gh release create "${{ needs.prepare.outputs.tag }}" release-artifacts/* --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
