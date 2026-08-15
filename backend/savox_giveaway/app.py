@@ -226,6 +226,11 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         @app.get("/realistic-space-panorama.webp")
         async def panorama() -> FileResponse:
             return FileResponse(frontend / "realistic-space-panorama.webp")
+
+        @app.get("/favicon.svg", include_in_schema=False)
+        @app.get("/favicon.ico", include_in_schema=False)
+        async def favicon() -> FileResponse:
+            return FileResponse(frontend / "favicon.svg", media_type="image/svg+xml")
     else:
 
         @app.get("/")

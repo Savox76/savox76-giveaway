@@ -1025,7 +1025,7 @@ export default function Home() {
   const [twitchSecretInput, setTwitchSecretInput] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.2.2");
+  const [appVersion, setAppVersion] = useState("0.2.3");
   const countdownTimerRef = useRef<number | null>(null);
   const claimTimerRef = useRef<number | null>(null);
   const battleStartedAtRef = useRef<number | null>(null);

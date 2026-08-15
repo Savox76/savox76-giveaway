@@ -20,14 +20,20 @@ def test_local_surfaces_and_status(tmp_path):
 
     status = client.get("/api/status")
     assert status.status_code == 200
-    assert status.json()["version"] == "0.2.2"
+    assert status.json()["version"] == "0.2.3"
     assert status.json()["mode"] == "python"
     assert status.json()["twitch"]["connected"] is False
 
     control = client.get("/control")
     overlay = client.get("/overlay")
+    favicon_svg = client.get("/favicon.svg")
+    favicon_ico = client.get("/favicon.ico")
     assert control.status_code == 200
     assert overlay.status_code == 200
+    assert favicon_svg.status_code == 200
+    assert favicon_ico.status_code == 200
+    assert favicon_svg.headers["content-type"].startswith("image/svg+xml")
+    assert favicon_ico.headers["content-type"].startswith("image/svg+xml")
     assert "Savox76 Giveaway System" in control.text
 
 
