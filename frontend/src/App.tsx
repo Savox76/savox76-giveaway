@@ -6,6 +6,7 @@ let THREE: typeof import("three");
 type ShipClass = "frigate" | "cruiser";
 type Phase = "idle" | "registration" | "countdown" | "battle" | "winner";
 type ClaimStatus = "none" | "pending" | "claimed" | "expired";
+type ArenaSoundCue = "toggle" | "countdown" | "battle" | "destroyed" | "winner" | "claim";
 
 type Combatant = {
   id: string;
@@ -67,6 +68,26 @@ type BackendSettings = {
   open_browser_on_start: boolean;
 };
 
+type ArenaStateMessage = {
+  origin: string;
+  phase: Phase;
+  combatants: Combatant[];
+  battleId: number;
+  round: number;
+  countdown: number;
+  winner: Combatant | null;
+  winnerAllTimeWins: number;
+  claimStatus: ClaimStatus;
+  claimSeconds: number;
+  logs: { time: string; message: string }[];
+  arenaTitle: string;
+  joinCommand: string;
+  shipScale: number;
+  frigateFireRate: number;
+  cruiserFireRate: number;
+  soundOn: boolean;
+};
+
 const EMPTY_TWITCH_STATUS: TwitchStatus = {
   configured: false,
   authenticated: false,
@@ -94,9 +115,11 @@ type ArenaProps = {
   shipScale: number;
   frigateFireRate: number;
   cruiserFireRate: number;
+  readOnly: boolean;
   onSnapshot: (ships: Combatant[]) => void;
   onLog: (message: string) => void;
   onWinner: (ship: Combatant) => void;
+  onSound: (cue: ArenaSoundCue) => void;
 };
 
 const CLASS_STATS = {
@@ -105,6 +128,50 @@ const CLASS_STATS = {
 } as const;
 
 const BALANCED_FIRE_RATES = { frigate: 1.55, cruiser: 2.35 } as const;
+
+let arenaAudioContext: AudioContext | null = null;
+
+function playArenaSound(cue: ArenaSoundCue) {
+  if (typeof AudioContext === "undefined") return;
+  arenaAudioContext ??= new AudioContext();
+  const context = arenaAudioContext;
+  const patterns: Record<ArenaSoundCue, { frequency: number; end: number; delay: number; duration: number; gain: number; type: OscillatorType }[]> = {
+    toggle: [{ frequency: 520, end: 760, delay: 0, duration: 0.12, gain: 0.055, type: "sine" }],
+    countdown: [{ frequency: 440, end: 440, delay: 0, duration: 0.09, gain: 0.045, type: "sine" }],
+    battle: [
+      { frequency: 110, end: 220, delay: 0, duration: 0.38, gain: 0.055, type: "sawtooth" },
+      { frequency: 330, end: 660, delay: 0.1, duration: 0.24, gain: 0.035, type: "sine" },
+    ],
+    destroyed: [{ frequency: 95, end: 38, delay: 0, duration: 0.32, gain: 0.07, type: "sawtooth" }],
+    winner: [
+      { frequency: 392, end: 392, delay: 0, duration: 0.18, gain: 0.045, type: "triangle" },
+      { frequency: 523, end: 523, delay: 0.17, duration: 0.2, gain: 0.05, type: "triangle" },
+      { frequency: 659, end: 784, delay: 0.35, duration: 0.42, gain: 0.055, type: "triangle" },
+    ],
+    claim: [
+      { frequency: 620, end: 720, delay: 0, duration: 0.12, gain: 0.045, type: "sine" },
+      { frequency: 820, end: 920, delay: 0.13, duration: 0.16, gain: 0.045, type: "sine" },
+    ],
+  };
+
+  void context.resume().then(() => {
+    const start = context.currentTime + 0.015;
+    patterns[cue].forEach((tone) => {
+      const oscillator = context.createOscillator();
+      const volume = context.createGain();
+      const toneStart = start + tone.delay;
+      oscillator.type = tone.type;
+      oscillator.frequency.setValueAtTime(tone.frequency, toneStart);
+      oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, tone.end), toneStart + tone.duration);
+      volume.gain.setValueAtTime(0.0001, toneStart);
+      volume.gain.exponentialRampToValueAtTime(tone.gain, toneStart + 0.018);
+      volume.gain.exponentialRampToValueAtTime(0.0001, toneStart + tone.duration);
+      oscillator.connect(volume).connect(context.destination);
+      oscillator.start(toneStart);
+      oscillator.stop(toneStart + tone.duration + 0.02);
+    });
+  }).catch(() => undefined);
+}
 
 const DEMO_NAMES = [
   "Voidrider", "NovaFox", "IronWolf", "Starling", "Orbital", "Nebula",
@@ -414,15 +481,15 @@ function createAsteroidGeometry(seed: number) {
   return geometry;
 }
 
-function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, cruiserFireRate, onSnapshot, onLog, onWinner }: ArenaProps) {
+function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, cruiserFireRate, readOnly, onSnapshot, onLog, onWinner, onSound }: ArenaProps) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const callbacksRef = useRef({ onSnapshot, onLog, onWinner });
+  const callbacksRef = useRef({ onSnapshot, onLog, onWinner, onSound });
   const combatantsRef = useRef(combatants);
   const fleetKey = useMemo(() => combatants.map((ship) => `${ship.id}:${ship.shipClass}`).join("|"), [combatants]);
 
   useEffect(() => {
-    callbacksRef.current = { onSnapshot, onLog, onWinner };
-  }, [onSnapshot, onLog, onWinner]);
+    callbacksRef.current = { onSnapshot, onLog, onWinner, onSound };
+  }, [onSnapshot, onLog, onWinner, onSound]);
 
   useEffect(() => {
     combatantsRef.current = combatants;
@@ -444,7 +511,7 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
       const webgl = probe.getContext("webgl2") || probe.getContext("webgl");
       if (!webgl) {
         mount.dataset.webgl = "unavailable";
-        if (phase !== "battle") return;
+        if (phase !== "battle" || readOnly) return;
         const fallbackFleet = combatantsRef.current.map((ship) => ({ ...ship }));
         const fallbackLastShots = new Map(fallbackFleet.map((ship) => [ship.id, performance.now()]));
         const fallbackTimer = window.setInterval(() => {
@@ -471,6 +538,7 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
               target.alive = false;
               attacker.kills += 1;
               callbacksRef.current.onLog(`${attacker.name} zerstört ${target.name}`);
+              callbacksRef.current.onSound("destroyed");
             }
             callbacksRef.current.onSnapshot(fallbackFleet.map((ship) => ({ ...ship })));
           }
@@ -752,10 +820,26 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
         target.data.alive = false;
         attacker.data.kills += 1;
         callbacksRef.current.onLog(`${attacker.data.name} zerstört ${target.data.name}`);
+        callbacksRef.current.onSound("destroyed");
         impacts.push(createImpact(scene, target.wrapper.position, 0xff7a32, true));
         window.setTimeout(() => { target.wrapper.visible = false; }, 460);
       }
       snapshot();
+    };
+
+    const fireVisual = (attacker: typeof entities[number], target: typeof entities[number], now: number) => {
+      const attackerStats = CLASS_STATS[attacker.data.shipClass];
+      attacker.lastShot = now;
+      const incoming = target.wrapper.position.clone().sub(attacker.wrapper.position).normalize();
+      const evadeSide = Math.random() > 0.5 ? 1 : -1;
+      target.evasion.set(-incoming.z * evadeSide, (Math.random() - 0.35) * 0.9, incoming.x * evadeSide).normalize();
+      target.evadeUntil = now + (target.data.shipClass === "frigate" ? 980 : 620);
+      const hit = Math.random() < (target.data.shipClass === "frigate" ? 0.66 : 0.88);
+      const endpoint = hit
+        ? target.wrapper.position
+        : target.wrapper.position.clone().addScaledVector(target.evasion, 3.6 + Math.random() * 2.8);
+      lasers.push(createLaser(scene, attacker.wrapper.position, endpoint, attackerStats.accent));
+      if (hit) impacts.push(createImpact(scene, target.wrapper.position, attackerStats.accent));
     };
 
     const clock = new THREE.Clock();
@@ -765,6 +849,17 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
       const delta = Math.min(clock.getDelta(), 0.05);
       const time = clock.elapsedTime;
       const now = performance.now();
+      if (readOnly) {
+        const remoteFleet = new Map(combatantsRef.current.map((ship) => [ship.id, ship]));
+        entities.forEach((entity) => {
+          const remote = remoteFleet.get(entity.data.id);
+          if (!remote) return;
+          if (Math.ceil(remote.hp) !== Math.ceil(entity.data.hp)) entity.label.update(remote.hp);
+          if (entity.data.alive && !remote.alive) impacts.push(createImpact(scene, entity.wrapper.position, 0xff7a32, true));
+          entity.data = { ...remote };
+          entity.wrapper.visible = remote.alive;
+        });
+      }
       stars.rotation.y = time * 0.0034;
       stars.rotation.x = Math.sin(time * 0.012) * 0.008;
       brightStars.rotation.y = -time * 0.0024;
@@ -798,7 +893,7 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
       if ((phase === "battle" || phase === "registration") && !finished) {
         const combatActive = phase === "battle";
         const alive = entities.filter((entity) => entity.data.alive);
-        if (combatActive && alive.length <= 1 && entities.length > 1) {
+        if (!readOnly && combatActive && alive.length <= 1 && entities.length > 1) {
           finished = true;
           if (alive[0] && !winnerReported) {
             winnerReported = true;
@@ -895,7 +990,10 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
           if (target) {
             const distance = entity.wrapper.position.distanceTo(target.wrapper.position);
             const fireDelay = (entity.data.shipClass === "frigate" ? frigateFireRate : cruiserFireRate) * 1000;
-            if (distance <= weaponRange && now - entity.lastShot > fireDelay * (0.85 + Math.random() * 0.3)) fire(entity, target, now);
+            if (distance <= weaponRange && now - entity.lastShot > fireDelay * (0.85 + Math.random() * 0.3)) {
+              if (readOnly) fireVisual(entity, target, now);
+              else fire(entity, target, now);
+            }
           }
         });
       } else {
@@ -964,7 +1062,7 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
       cancelled = true;
       cleanup?.();
     };
-  }, [fleetKey, battleId, phase, shipScale, frigateFireRate, cruiserFireRate]);
+  }, [fleetKey, battleId, phase, shipScale, frigateFireRate, cruiserFireRate, readOnly]);
 
   const positions = [
     [15, 25], [78, 22], [48, 47], [21, 67], [81, 60], [35, 78], [66, 33], [60, 73],
@@ -1010,6 +1108,7 @@ export default function Home() {
   const [round, setRound] = useState(1);
   const [countdown, setCountdown] = useState(3);
   const [winner, setWinner] = useState<Combatant | null>(null);
+  const [winnerAllTimeWins, setWinnerAllTimeWins] = useState(0);
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>("none");
   const [claimSeconds, setClaimSeconds] = useState(60);
   const [soundOn, setSoundOn] = useState(true);
@@ -1033,7 +1132,12 @@ export default function Home() {
   const [twitchSecretInput, setTwitchSecretInput] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.2.6");
+  const [appVersion, setAppVersion] = useState("0.2.7");
+  const [clientId] = useState(() => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `client-${Date.now()}-${Math.random()}`);
+  const socketRef = useRef<WebSocket | null>(null);
+  const soundOnRef = useRef(soundOn);
+  const arenaStateRef = useRef<ArenaStateMessage | null>(null);
+  const testModeRef = useRef(false);
   const countdownTimerRef = useRef<number | null>(null);
   const claimTimerRef = useRef<number | null>(null);
   const battleStartedAtRef = useRef<number | null>(null);
@@ -1059,6 +1163,8 @@ export default function Home() {
       if (storedFrigateRate >= 0.2 && storedFrigateRate <= 8) setFrigateFireRate(storedFrigateRate);
       const storedCruiserRate = Number(window.localStorage.getItem("savox-cruiser-fire-rate"));
       if (storedCruiserRate >= 0.2 && storedCruiserRate <= 8) setCruiserFireRate(storedCruiserRate);
+      const storedSound = window.localStorage.getItem("savox-sound-on");
+      if (storedSound !== null) setSoundOn(storedSound === "true");
       const storedHistory = window.localStorage.getItem("savox-battle-history");
       if (storedHistory) {
         try {
@@ -1114,6 +1220,23 @@ export default function Home() {
     }
   };
 
+  const emitSoundCue = (cue: ArenaSoundCue) => {
+    if (overlayOnly || !soundOnRef.current || socketRef.current?.readyState !== WebSocket.OPEN) return;
+    socketRef.current.send(JSON.stringify({ type: "arena.sound", payload: { origin: clientId, cue } }));
+  };
+
+  const toggleSound = () => {
+    if (overlayOnly) return;
+    const next = !soundOn;
+    soundOnRef.current = next;
+    setSoundOn(next);
+    window.localStorage.setItem("savox-sound-on", String(next));
+    playArenaSound("toggle");
+    if (next) {
+      emitSoundCue("toggle");
+    }
+  };
+
   const registerParticipantName = (rawName: string) => {
     const clean = rawName.trim().replace(/^@/, "").slice(0, 24);
     if (!clean || phase !== "registration") return;
@@ -1139,6 +1262,7 @@ export default function Home() {
     setClaimStatus("claimed");
     addLog(`${winner.name} hat den Gewinn geclaimt`);
     postChat(`@${winner.name} hat den Gewinn erfolgreich geclaimt!`);
+    emitSoundCue("claim");
     return true;
   };
 
@@ -1159,10 +1283,12 @@ export default function Home() {
   };
 
   const startGiveaway = () => {
+    testModeRef.current = false;
     if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
     claimTimerRef.current = null;
     setCombatants([]);
     setWinner(null);
+    setWinnerAllTimeWins(0);
     setClaimStatus("none");
     setClaimSeconds(60);
     setPhase("registration");
@@ -1175,8 +1301,10 @@ export default function Home() {
     if (phase === "battle" || phase === "countdown") return;
     if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
     claimTimerRef.current = null;
+    testModeRef.current = true;
     setCombatants(balanceFleet(createTestNames(count)));
     setWinner(null);
+    setWinnerAllTimeWins(0);
     setClaimStatus("none");
     setClaimSeconds(60);
     setPhase("registration");
@@ -1187,11 +1315,13 @@ export default function Home() {
   const beginBattleCountdown = () => {
     setCountdown(3);
     setPhase("countdown");
+    emitSoundCue("countdown");
     let remaining = 3;
     if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
     countdownTimerRef.current = window.setInterval(() => {
       remaining -= 1;
       setCountdown(remaining);
+      if (remaining > 0) emitSoundCue("countdown");
       if (remaining <= 0) {
         if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
         countdownTimerRef.current = null;
@@ -1199,6 +1329,7 @@ export default function Home() {
         setPhase("battle");
         setBattleId((value) => value + 1);
         addLog("Kampf freigegeben");
+        emitSoundCue("battle");
       }
     }, 900);
   };
@@ -1207,6 +1338,7 @@ export default function Home() {
     if (combatants.length < 2 || phase !== "registration") return;
     setCombatants(balanceFleet(combatants.map((entry) => entry.name)));
     setWinner(null);
+    setWinnerAllTimeWins(0);
     setClaimStatus("none");
     setControlOpen(false);
     addLog("Anmeldung geschlossen");
@@ -1220,6 +1352,7 @@ export default function Home() {
     claimTimerRef.current = null;
     setCombatants(balanceFleet(combatants.map((entry) => entry.name)));
     setWinner(null);
+    setWinnerAllTimeWins(0);
     setClaimStatus("none");
     setClaimSeconds(60);
     setRound((value) => value + 1);
@@ -1235,9 +1368,11 @@ export default function Home() {
     if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
     claimTimerRef.current = null;
     battleStartedAtRef.current = null;
+    testModeRef.current = false;
     setCombatants([]);
     setPhase("idle");
     setWinner(null);
+    setWinnerAllTimeWins(0);
     setClaimStatus("none");
     setClaimSeconds(60);
     setRound((value) => value + 1);
@@ -1346,10 +1481,11 @@ export default function Home() {
     const connect = () => {
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       socket = new WebSocket(`${protocol}://${window.location.host}/ws/events`);
+      socketRef.current = socket;
       socket.onmessage = (event) => {
         const message = JSON.parse(event.data) as { type: string; payload: Record<string, unknown> };
         if (message.type === "chat.message") {
-          incomingChatHandlerRef.current(String(message.payload.sender || ""), String(message.payload.message || ""));
+          if (!overlayOnly) incomingChatHandlerRef.current(String(message.payload.sender || ""), String(message.payload.message || ""));
         } else if (message.type === "twitch.status") {
           setTwitchStatus(message.payload as unknown as TwitchStatus);
         } else if (message.type === "update.status") {
@@ -1358,10 +1494,39 @@ export default function Home() {
           setIntegrationMessage(`Version ${String(message.payload.version || "")} wird automatisch installiert …`);
         } else if (message.type === "update.error") {
           setIntegrationMessage(String(message.payload.message || "Updateprüfung fehlgeschlagen"));
+        } else if (message.type === "arena.state" && overlayOnly) {
+          const remote = message.payload as unknown as ArenaStateMessage;
+          if (remote.origin === clientId) return;
+          setPhase(remote.phase);
+          setCombatants(remote.combatants.map((entry) => ({ ...entry })));
+          setBattleId(remote.battleId);
+          setRound(remote.round);
+          setCountdown(remote.countdown);
+          setWinner(remote.winner ? { ...remote.winner } : null);
+          setWinnerAllTimeWins(remote.winnerAllTimeWins);
+          setClaimStatus(remote.claimStatus);
+          setClaimSeconds(remote.claimSeconds);
+          setLogs(remote.logs.map((entry) => ({ ...entry })));
+          setArenaTitle(remote.arenaTitle);
+          setJoinCommand(remote.joinCommand);
+          setShipScale(remote.shipScale);
+          setFrigateFireRate(remote.frigateFireRate);
+          setCruiserFireRate(remote.cruiserFireRate);
+          soundOnRef.current = remote.soundOn;
+          setSoundOn(remote.soundOn);
+        } else if (message.type === "arena.sound" && overlayOnly) {
+          const cue = String(message.payload.cue || "") as ArenaSoundCue;
+          if (soundOnRef.current && ["toggle", "countdown", "battle", "destroyed", "winner", "claim"].includes(cue)) playArenaSound(cue);
         }
       };
-      socket.onopen = () => socket?.send("ready");
+      socket.onopen = () => {
+        socket?.send("ready");
+        if (!overlayOnly && arenaStateRef.current) {
+          socket?.send(JSON.stringify({ type: "arena.state", payload: arenaStateRef.current }));
+        }
+      };
       socket.onclose = () => {
+        if (socketRef.current === socket) socketRef.current = null;
         if (!stopped) reconnectTimer = window.setTimeout(connect, 2500);
       };
     };
@@ -1374,8 +1539,36 @@ export default function Home() {
       window.clearInterval(keepAlive);
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       socket?.close();
+      socketRef.current = null;
     };
-  }, []);
+  }, [clientId, overlayOnly]);
+
+  useEffect(() => {
+    soundOnRef.current = soundOn;
+    const state: ArenaStateMessage = {
+      origin: clientId,
+      phase,
+      combatants,
+      battleId,
+      round,
+      countdown,
+      winner,
+      winnerAllTimeWins,
+      claimStatus,
+      claimSeconds,
+      logs,
+      arenaTitle,
+      joinCommand,
+      shipScale,
+      frigateFireRate,
+      cruiserFireRate,
+      soundOn,
+    };
+    arenaStateRef.current = state;
+    if (!overlayOnly && socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: "arena.state", payload: state }));
+    }
+  }, [arenaTitle, battleId, claimSeconds, claimStatus, clientId, combatants, countdown, cruiserFireRate, frigateFireRate, joinCommand, logs, overlayOnly, phase, round, shipScale, soundOn, winner, winnerAllTimeWins]);
 
   const saveFireRates = () => {
     const frigateRate = clampFireRate(frigateFireRate, BALANCED_FIRE_RATES.frigate);
@@ -1425,12 +1618,24 @@ export default function Home() {
       return next;
     });
     setWinner(ship);
+    setWinnerAllTimeWins(0);
     setPhase("winner");
     setClaimStatus("pending");
     setClaimSeconds(60);
     setChatSender(ship.name);
     addLog(`${ship.name} gewinnt Runde ${round}`);
     postChat(`@${ship.name} gewinnt! Poste innerhalb von 60 Sekunden etwas im Chat, um den Gewinn zu claimen.`);
+    emitSoundCue("winner");
+    if (!testModeRef.current) {
+      void fetch("/api/stats/winner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: ship.name, record_id: record.id }),
+      }).then(async (response) => {
+        if (!response.ok) throw new Error("Siegerstatistik konnte nicht gespeichert werden");
+        return response.json() as Promise<{ wins: number }>;
+      }).then((payload) => setWinnerAllTimeWins(payload.wins)).catch(() => undefined);
+    }
     if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
     let remaining = 60;
     claimTimerRef.current = window.setInterval(() => {
@@ -1463,7 +1668,7 @@ export default function Home() {
   return (
     <main className={`broadcast-shell phase-${phase} ${overlayOnly ? "overlay-only" : "control-surface"}`}>
       <div className="deep-space-backdrop" aria-hidden="true" />
-      <SpaceArena combatants={combatants} battleId={battleId} phase={phase} shipScale={shipScale} frigateFireRate={frigateFireRate} cruiserFireRate={cruiserFireRate} onSnapshot={setCombatants} onLog={addLog} onWinner={handleWinner} />
+      <SpaceArena combatants={combatants} battleId={battleId} phase={phase} shipScale={shipScale} frigateFireRate={frigateFireRate} cruiserFireRate={cruiserFireRate} readOnly={overlayOnly} onSnapshot={setCombatants} onLog={addLog} onWinner={handleWinner} onSound={emitSoundCue} />
       <div className="nebula nebula-cyan" />
       <div className="nebula nebula-amber" />
       <div className="scanlines" />
@@ -1475,7 +1680,7 @@ export default function Home() {
         </div>
         <div className="status-cluster">
           <div className={`status-pill status-${phase}`}><i /> {phaseLabel}</div>
-          <button className="icon-button" type="button" onClick={() => setSoundOn((value) => !value)} aria-label="Sound umschalten">{soundOn ? "◖))" : "◖×"}</button>
+          <button className="icon-button" type="button" onClick={toggleSound} aria-label="Sound umschalten" title={soundOn ? "Sounds aktiv – zum Ausschalten klicken" : "Sounds aus – für Testton und OBS-Sounds einschalten"}>{soundOn ? "◖))" : "◖×"}</button>
           <button className={`debug-button ${debugOpen ? "active" : ""}`} type="button" onClick={() => { setControlOpen(false); setDebugOpen((value) => !value); }}>DEBUG</button>
           <button className="control-button" type="button" onClick={() => { setDebugOpen(false); setControlOpen(true); }}>CONTROL</button>
         </div>
@@ -1518,7 +1723,7 @@ export default function Home() {
           <p className="panel-kicker">{claimStatus === "pending" ? "GEWINN MUSS BESTÄTIGT WERDEN" : claimStatus === "claimed" ? "GEWINN ERFOLGREICH GECLAIMT" : "CLAIM-ZEIT ABGELAUFEN"}</p>
           <span className="winner-crown">◇</span>
           <h2>{winner.name}</h2>
-          <p>{winner.shipClass === "frigate" ? "FRIGATTE" : "CRUISER"} · {winner.kills} ABSCHÜSSE · {Math.ceil(winner.hp)} HP</p>
+          <p>{winner.shipClass === "frigate" ? "FRIGATTE" : "CRUISER"} · {winner.kills} ABSCHÜSSE · {Math.ceil(winner.hp)} HP{winnerAllTimeWins > 0 ? ` · ALLTIME-SIEG #${winnerAllTimeWins}` : ""}</p>
           {claimStatus === "pending" && <div className="claim-timer"><span>RESTZEIT</span><strong>00:{String(claimSeconds).padStart(2, "0")}</strong><small>@{winner.name} muss jetzt etwas im Chat posten.</small></div>}
           {claimStatus === "claimed" && <div className="claim-confirmed">✓ GEWINN BESTÄTIGT</div>}
           {claimStatus === "expired" && <p className="claim-expired-copy">Keine Antwort erhalten. Alle bisherigen Teilnehmer bleiben für die nächste Runde gespeichert.</p>}

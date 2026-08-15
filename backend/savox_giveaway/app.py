@@ -2,24 +2,26 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import __version__
 from .config import DEFAULT_SERVER_PORT, AppSettings, ConfigStore
 from .events import EventBus
 from .secrets import SecretStore
+from .stats import WinnerStatsStore
 from .twitch import TwitchService
 from .updater import GitHubUpdater, UpdateInfo, exit_after_delay, update_to_dict
 
@@ -45,12 +47,59 @@ class ChatPayload(BaseModel):
     message: str = Field(min_length=1, max_length=500)
 
 
+class WinnerRecordPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=25)
+    record_id: str = Field(min_length=1, max_length=100)
+
+
+class ArenaCombatantPayload(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=25)
+    shipClass: Literal["frigate", "cruiser"]
+    hp: float = Field(ge=0, le=1000)
+    maxHp: float = Field(gt=0, le=1000)
+    alive: bool
+    kills: int = Field(ge=0, le=1000)
+
+
+class ArenaLogPayload(BaseModel):
+    time: str = Field(min_length=1, max_length=8)
+    message: str = Field(min_length=1, max_length=200)
+
+
+class ArenaStatePayload(BaseModel):
+    origin: str = Field(min_length=1, max_length=100)
+    phase: Literal["idle", "registration", "countdown", "battle", "winner"]
+    combatants: list[ArenaCombatantPayload] = Field(default_factory=list, max_length=200)
+    battleId: int = Field(ge=0)
+    round: int = Field(ge=1)
+    countdown: int = Field(ge=0, le=3)
+    winner: ArenaCombatantPayload | None = None
+    winnerAllTimeWins: int = Field(default=0, ge=0)
+    claimStatus: Literal["none", "pending", "claimed", "expired"]
+    claimSeconds: int = Field(ge=0, le=60)
+    logs: list[ArenaLogPayload] = Field(default_factory=list, max_length=7)
+    arenaTitle: str = Field(min_length=1, max_length=28)
+    joinCommand: str = Field(min_length=1, max_length=20)
+    shipScale: float = Field(ge=0.45, le=1)
+    frigateFireRate: float = Field(ge=0.2, le=8)
+    cruiserFireRate: float = Field(ge=0.2, le=8)
+    soundOn: bool
+
+
+class ArenaSoundPayload(BaseModel):
+    origin: str = Field(min_length=1, max_length=100)
+    cue: Literal["toggle", "countdown", "battle", "destroyed", "winner", "claim"]
+
+
 class ApplicationState:
     def __init__(self, config: ConfigStore | None = None, secret_store: SecretStore | None = None) -> None:
         self.config = config or ConfigStore()
         self.secrets = secret_store or SecretStore()
         self.events = EventBus()
         self.twitch = TwitchService(self.config, self.secrets, self.events)
+        self.stats = WinnerStatsStore(self.config.path.with_name("winner-stats.json"))
+        self.arena_state: dict[str, Any] | None = None
         self.latest_update: UpdateInfo | None = None
         self.update_task: asyncio.Task[None] | None = None
 
@@ -174,6 +223,17 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"sent": True}
 
+    @app.post("/api/stats/winner")
+    async def record_winner(payload: WinnerRecordPayload) -> dict[str, Any]:
+        try:
+            return app_state.stats.record(payload.name, payload.record_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/stats/winners")
+    async def winner_leaders() -> list[dict[str, Any]]:
+        return app_state.stats.leaders()
+
     @app.get("/api/update/check")
     async def check_update() -> dict[str, Any]:
         try:
@@ -202,10 +262,29 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         await websocket.send_json(
             {"type": "update.status", "payload": update_to_dict(app_state.latest_update)}
         )
+        if app_state.arena_state is not None:
+            await websocket.send_json({"type": "arena.state", "payload": app_state.arena_state})
         try:
             while True:
-                await websocket.receive_text()
+                raw = await websocket.receive_text()
+                if raw in {"ready", "ping"} or len(raw) > 200_000:
+                    continue
+                try:
+                    message = json.loads(raw)
+                    event_type = message.get("type")
+                    payload = message.get("payload")
+                    if event_type == "arena.state":
+                        state_payload = ArenaStatePayload.model_validate(payload).model_dump()
+                        app_state.arena_state = state_payload
+                        await app_state.events.publish("arena.state", state_payload)
+                    elif event_type == "arena.sound":
+                        sound_payload = ArenaSoundPayload.model_validate(payload).model_dump()
+                        await app_state.events.publish("arena.sound", sound_payload)
+                except (AttributeError, TypeError, ValueError, ValidationError, json.JSONDecodeError):
+                    continue
         except WebSocketDisconnect:
+            pass
+        finally:
             await app_state.events.disconnect(websocket)
 
     frontend = frontend_directory()

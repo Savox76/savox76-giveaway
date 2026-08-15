@@ -46,6 +46,21 @@ erreichbar. Der Port lässt sich unter **GitHub & Updates** ändern. Nach dem Sp
 Tool neu gestartet werden; anschließend müssen auch die OBS-Adresse und die OAuth Redirect URL
 bei Twitch auf den gewählten Port angepasst werden.
 
+## Control, OBS und Sounds
+
+`/control` ist die Steuerung und überträgt Teilnehmer, Countdown, Kampf, Claim, Gewinner und
+Darstellungswerte live an `/overlay`. Die OBS-Browserquelle kann vor oder nach der Steuerung
+geöffnet werden und erhält den letzten Stand automatisch. Auch Testflotten werden übertragen.
+
+Der Sound-Schalter oben steuert dezente Signale für Countdown, Kampfbeginn, zerstörte Schiffe,
+Gewinner und Claim. Ein Klick auf den Schalter spielt in der Control-Seite einen kurzen Testton.
+In OBS bei der Browserquelle **Audio über OBS steuern** aktivieren. Soll der Ton zusätzlich am
+Streaming-PC hörbar sein, in den erweiterten Audioeigenschaften **Monitor und Ausgabe** wählen.
+
+Reale Gewinner werden dauerhaft in `winner-stats.json` im lokalen Konfigurationsordner gezählt.
+Der Siegerdialog zeigt den aktuellen Wert als `ALLTIME-SIEG #…`. Automatische Testpiloten aus der
+Debug-Funktion verändern diese Statistik nicht.
+
 ## Automatische Updates
 
 Das Tool prüft beim Start und danach alle sechs Stunden das öffentliche GitHub-Repository. Wenn
@@ -95,4 +110,5 @@ Das Projekt steht unter der [Savox76 Non-Commercial Source License](LICENSE). Ko
 ist ohne vorherige schriftliche Genehmigung nicht erlaubt.
 
 Konfiguration und Twitch-Tokens werden nicht eingecheckt. Geheimnisse liegen im Schlüsselspeicher
-des Betriebssystems; Darstellungswerte und Kampfhistorie bleiben lokal auf dem Streaming-PC.
+des Betriebssystems; Darstellungswerte, Kampfhistorie und Siegerstatistik bleiben lokal auf dem
+Streaming-PC.
