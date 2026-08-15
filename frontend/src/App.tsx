@@ -496,7 +496,7 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.02;
+    renderer.toneMappingExposure = 1.08;
     renderer.setClearColor(0x000000, 0);
     mount.appendChild(renderer.domElement);
 
@@ -551,12 +551,18 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
     const celestial = new THREE.Group();
     scene.add(celestial);
 
-    const sunTexture = createGlowTexture("rgba(255,255,246,1)", "rgba(255,176,83,.72)");
+    const sunTexture = createGlowTexture("rgba(255,255,250,1)", "rgba(255,183,91,.86)");
+    const sunHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTexture, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
+    sunHalo.position.set(37, 23, -67);
+    sunHalo.scale.set(45, 45, 1);
+    sunHalo.renderOrder = 0;
+    celestial.add(sunHalo);
     const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTexture, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     sun.position.set(37, 23, -67);
-    sun.scale.set(21, 21, 1);
+    sun.scale.set(27.5, 27.5, 1);
+    sun.renderOrder = 1;
     celestial.add(sun);
-    const sunLight = new THREE.PointLight(0xffd6a0, 165, 165, 1.45);
+    const sunLight = new THREE.PointLight(0xffd6a0, 235, 195, 1.32);
     sunLight.position.copy(sun.position);
     scene.add(sunLight);
 
@@ -762,7 +768,9 @@ function SpaceArena({ combatants, battleId, phase, shipScale, frigateFireRate, c
       stars.rotation.y = time * 0.0034;
       stars.rotation.x = Math.sin(time * 0.012) * 0.008;
       brightStars.rotation.y = -time * 0.0024;
-      sun.scale.setScalar(20.8 + Math.sin(time * 0.48) * 0.34);
+      sun.scale.setScalar(27.3 + Math.sin(time * 0.48) * 0.48);
+      sunHalo.scale.setScalar(45 + Math.sin(time * 0.38) * 0.8);
+      (sunHalo.material as SpriteMaterial).opacity = 0.38 + Math.sin(time * 0.42) * 0.035;
       planet.rotation.y = time * 0.006;
       moon.rotation.y = -time * 0.011;
       anomalyDust.rotation.y = time * 0.045;
@@ -1025,7 +1033,7 @@ export default function Home() {
   const [twitchSecretInput, setTwitchSecretInput] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.2.3");
+  const [appVersion, setAppVersion] = useState("0.2.4");
   const countdownTimerRef = useRef<number | null>(null);
   const claimTimerRef = useRef<number | null>(null);
   const battleStartedAtRef = useRef<number | null>(null);
