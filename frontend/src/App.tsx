@@ -1033,7 +1033,7 @@ export default function Home() {
   const [twitchSecretInput, setTwitchSecretInput] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.2.5");
+  const [appVersion, setAppVersion] = useState("0.2.6");
   const countdownTimerRef = useRef<number | null>(null);
   const claimTimerRef = useRef<number | null>(null);
   const battleStartedAtRef = useRef<number | null>(null);
@@ -1457,7 +1457,8 @@ export default function Home() {
   const averageRealDuration = battleHistory.length ? battleHistory.reduce((sum, record) => sum + record.durationSeconds, 0) / battleHistory.length : 0;
   const averageRealParticipants = battleHistory.length ? battleHistory.reduce((sum, record) => sum + record.participants, 0) / battleHistory.length : 0;
   const winnerNameLength = winner ? Array.from(winner.name).length : 0;
-  const winnerCardWidth = Math.min(920, 460 + Math.max(0, winnerNameLength - 12) * 36);
+  const winnerCardWidth = Math.min(1040, 600 + Math.max(0, winnerNameLength - 10) * 32);
+  const winnerNameFontSize = Math.max(27, 58 - Math.max(0, winnerNameLength - 12) * 2.35);
 
   return (
     <main className={`broadcast-shell phase-${phase} ${overlayOnly ? "overlay-only" : "control-surface"}`}>
@@ -1513,7 +1514,7 @@ export default function Home() {
 
       {phase === "countdown" && <div className="countdown-overlay"><span>GEFECHT STARTET</span><strong>{countdown}</strong></div>}
       {phase === "winner" && winner && (
-        <div className={`winner-card glass-panel claim-${claimStatus}`} style={{ "--winner-card-width": `${winnerCardWidth}px` } as CSSProperties}>
+        <div className={`winner-card glass-panel claim-${claimStatus}`} style={{ "--winner-card-width": `${winnerCardWidth}px`, "--winner-name-size": `${winnerNameFontSize}px` } as CSSProperties}>
           <p className="panel-kicker">{claimStatus === "pending" ? "GEWINN MUSS BESTÄTIGT WERDEN" : claimStatus === "claimed" ? "GEWINN ERFOLGREICH GECLAIMT" : "CLAIM-ZEIT ABGELAUFEN"}</p>
           <span className="winner-crown">◇</span>
           <h2>{winner.name}</h2>

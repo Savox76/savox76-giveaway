@@ -118,9 +118,9 @@ button { font: inherit; }
 .countdown-overlay { position: absolute; z-index: 8; inset: 0; display: grid; place-content: center; text-align: center; background: radial-gradient(circle, rgba(9, 45, 55, .18), transparent 38%); pointer-events: none; }
 .countdown-overlay span { color: #8ccbd5; font: 650 12px var(--font-geist-mono), monospace; letter-spacing: .3em; }
 .countdown-overlay strong { color: #e9fcff; font: 800 clamp(110px, 17vw, 240px)/.9 var(--font-geist-mono), monospace; text-shadow: 0 0 55px rgba(52, 217, 242, .38); animation: countdown-pop .9s ease infinite; }
-.winner-card { position: absolute; z-index: 8; left: 50%; top: 47%; transform: translate(-50%, -50%); width: min(var(--winner-card-width, 460px), calc(100vw - 40px)); padding: 30px; text-align: center; border-color: rgba(255, 164, 75, .4); clip-path: polygon(20px 0, calc(100% - 20px) 0, 100% 20px, 100% calc(100% - 20px), calc(100% - 20px) 100%, 20px 100%, 0 calc(100% - 20px), 0 20px); transition: width .28s ease; }
+.winner-card { position: absolute; z-index: 8; left: 50%; top: 47%; transform: translate(-50%, -50%); width: min(var(--winner-card-width, 600px), calc(100vw - 64px)); padding: 30px clamp(42px, 5vw, 72px); text-align: center; border-color: rgba(255, 164, 75, .4); clip-path: polygon(20px 0, calc(100% - 20px) 0, 100% 20px, 100% calc(100% - 20px), calc(100% - 20px) 100%, 20px 100%, 0 calc(100% - 20px), 0 20px); transition: width .28s ease; }
 .winner-crown { display: block; margin-top: 8px; color: var(--amber); font-size: 46px; text-shadow: 0 0 24px rgba(255, 158, 69, .5); }
-.winner-card h2 { max-width: 100%; margin: -5px 0 3px; font-size: clamp(33px, 5vw, 58px); line-height: 1.06; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.winner-card h2 { width: calc(100% - 20px); max-width: 100%; margin: -5px auto 3px; overflow-wrap: anywhere; font-size: clamp(27px, var(--winner-name-size, 58px), 58px); line-height: 1.08; letter-spacing: .065em; text-transform: uppercase; word-break: break-word; white-space: normal; }
 .winner-card > p:not(.panel-kicker) { margin: 0 0 20px; color: #8ca6ae; font: 600 10px var(--font-geist-mono), monospace; letter-spacing: .12em; }
 .winner-card button { border: 1px solid rgba(255, 158, 69, .42); background: rgba(255, 158, 69, .1); color: #ffd2aa; padding: 11px 18px; font: 650 10px var(--font-geist-mono), monospace; letter-spacing: .15em; cursor: pointer; }
 .winner-card.claim-pending { border-color: rgba(82, 223, 244, .44); }
@@ -301,8 +301,8 @@ button:disabled { opacity: .36; cursor: not-allowed; }
   .incoming-chat-form > div { grid-template-columns: 1fr 1fr; }
   .incoming-chat-form button { grid-column: 1 / -1; min-height: 34px; }
   .integration-grid, .update-card { grid-template-columns: 1fr; }
-  .winner-card { top: 45%; padding: 25px 20px; }
-  .winner-card h2 { overflow-wrap: anywhere; font-size: clamp(29px, 10vw, 45px); letter-spacing: .045em; white-space: normal; }
+  .winner-card { top: 45%; width: min(var(--winner-card-width, 600px), calc(100vw - 24px)); padding: 25px 28px; }
+  .winner-card h2 { width: calc(100% - 12px); font-size: clamp(24px, min(10vw, var(--winner-name-size, 45px)), 45px); letter-spacing: .045em; }
   .left-hud { left: 14px; }
   .right-hud { display: none; }
   .join-banner { bottom: 14px; width: calc(100vw - 28px); grid-template-columns: 106px 1fr; }
