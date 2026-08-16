@@ -10,21 +10,19 @@ from typing import Literal
 
 import uvicorn
 
+from scripts.error_report import ErrorReportStore, open_issue_report
+
 from . import __version__
 from .app import app
 from .config import AppSettings, ConfigStore
-from .updater import GitHubUpdater
+from .updater import GitHubUpdater, project_root
 
 StartupStatus = Literal["current", "updating", "manual", "unverified"]
 
 
 async def check_startup_update(settings: AppSettings) -> StartupStatus:
     print(f"Prüfe GitHub-Version für v{__version__} …", flush=True)
-    updater = GitHubUpdater(
-        owner=settings.github_owner,
-        repo=settings.github_repo,
-        current_version=__version__,
-    )
+    updater = GitHubUpdater(current_version=__version__)
     try:
         update = await updater.check()
     except Exception as exc:
@@ -108,8 +106,33 @@ def main() -> None:
                 "Möglicherweise wird dieser Port bereits verwendet.",
                 flush=True,
             )
+            raise SystemExit(98) from exc
         raise
 
 
+def report_server_failure(exc: BaseException, component: str) -> None:
+    root = project_root()
+    store = ErrorReportStore(root / ".updates" / "error-reports", root, __version__)
+    report = store.capture_exception(
+        exc,
+        component,
+        context={"Startphase": "Lokaler Python-Server", "Server-Port": ConfigStore().load().server_port},
+    )
+    print(
+        f"Vorausgefüllter GitHub-Fehlerbericht: {report.issue_url}\n"
+        f"Lokale Diagnose: {root / '.updates' / 'error-reports' / report.report_file}",
+        flush=True,
+    )
+    open_issue_report(report)
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit as exc:
+        if exc.code and exc.code != 98:
+            report_server_failure(exc, "Serverstart")
+        raise
+    except Exception as exc:
+        report_server_failure(exc, "Serverprozess")
+        raise

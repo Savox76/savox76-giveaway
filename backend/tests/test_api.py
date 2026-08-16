@@ -21,9 +21,10 @@ def test_local_surfaces_and_status(tmp_path):
 
     status = client.get("/api/status")
     assert status.status_code == 200
-    assert status.json()["version"] == "0.3.3"
+    assert status.json()["version"] == "0.3.4"
     assert status.json()["mode"] == "python"
     assert status.json()["twitch"]["connected"] is False
+    assert status.json()["error_report"]["available"] is False
 
     control = client.get("/control")
     overlay = client.get("/overlay")
@@ -47,6 +48,55 @@ def test_server_port_can_be_saved(tmp_path):
     assert response.status_code == 200
     assert response.json()["server_port"] == 9010
     assert response.json()["twitch_redirect_uri"] == "http://127.0.0.1:9010/api/twitch/callback"
+    assert "github_owner" not in response.json()
+    assert "github_repo" not in response.json()
+
+
+def test_frontend_error_creates_sanitized_prefilled_issue(tmp_path):
+    state = ApplicationState(ConfigStore(tmp_path / "config.json"), MemorySecrets())
+    client = TestClient(create_app(state))
+
+    response = client.post(
+        "/api/error-report/frontend",
+        json={
+            "error_type": "TypeError",
+            "message": "Render failed with access_token=secret-value",
+            "stack": r"at Home (C:\Users\Mario\App.tsx:10:4)",
+            "source": "Browseroberfläche",
+            "route": "/control",
+            "viewport": "1920x1080",
+            "user_agent": "TestBrowser/1.0",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["fingerprint"]
+    assert payload["issue_url"].startswith(
+        "https://github.com/Savox76/savox76-giveaway/issues/new?"
+    )
+    assert "secret-value" not in payload["issue_url"]
+    assert "Mario" not in payload["issue_url"]
+    assert client.get("/api/error-report").json()["fingerprint"] == payload["fingerprint"]
+
+
+def test_unhandled_local_api_error_is_captured(tmp_path):
+    state = ApplicationState(ConfigStore(tmp_path / "config.json"), MemorySecrets())
+    app = create_app(state)
+
+    @app.get("/api/test/unhandled")
+    async def fail_diagnostic_test():
+        raise RuntimeError("unexpected engine failure")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/api/test/unhandled")
+
+    assert response.status_code == 500
+    report = client.get("/api/error-report").json()
+    assert report["available"] is True
+    assert report["component"] == "Lokale API"
+    assert report["error_type"] == "RuntimeError"
 
 
 def test_twitch_login_uses_device_authorization(tmp_path, monkeypatch):

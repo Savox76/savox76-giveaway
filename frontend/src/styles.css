@@ -311,6 +311,7 @@ button:disabled { opacity: .36; cursor: not-allowed; }
 .alltime-row > span small { margin-top: 2px; color: #49646c; font: 550 6px var(--font-geist-mono), monospace; letter-spacing: .08em; }
 .alltime-empty { margin: 12px 0; color: #526f78; font: 550 8px/1.5 var(--font-geist-mono), monospace; }
 .integration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.update-settings .integration-grid { grid-template-columns: 1fr; }
 .integration-grid label, .secret-field { display: grid; gap: 6px; color: #607c85; font: 600 8px var(--font-geist-mono), monospace; letter-spacing: .1em; }
 .integration-grid input, .secret-field input { min-width: 0; width: 100%; border: 1px solid rgba(82, 223, 244, .18); background: rgba(2, 9, 14, .7); color: #d9f1f5; outline: none; padding: 11px; font: 550 10px var(--font-geist-mono), monospace; letter-spacing: 0; }
 .integration-grid input:focus, .secret-field input:focus { border-color: rgba(82, 223, 244, .55); }
@@ -335,6 +336,14 @@ button:disabled { opacity: .36; cursor: not-allowed; }
 .update-card p { margin: 0; color: #66838b; font-size: 9px; line-height: 1.45; }
 .update-card.available { border-color: rgba(75, 228, 154, .25); }
 .update-card.available p { color: #87cda8; }
+.error-report-card { display: grid; grid-template-columns: 132px minmax(0, 1fr); align-items: center; gap: 12px; margin-top: 8px; padding: 11px; border: 1px solid rgba(82, 223, 244, .12); background: rgba(0, 6, 10, .38); }
+.error-report-card > div span, .error-report-card > div b { display: block; }
+.error-report-card > div span { color: #4f7079; font: 600 7px var(--font-geist-mono), monospace; }
+.error-report-card > div b { margin-top: 4px; color: #77a0a8; font: 700 10px var(--font-geist-mono), monospace; }
+.error-report-card p { margin: 0; color: #66838b; font-size: 8px; line-height: 1.5; }
+.error-report-card a { grid-column: 1 / -1; display: grid; place-items: center; min-height: 34px; border: 1px solid rgba(255, 108, 102, .38); background: rgba(145, 29, 27, .11); color: #ff9994; text-decoration: none; font: 700 8px var(--font-geist-mono), monospace; letter-spacing: .08em; }
+.error-report-card.available { border-color: rgba(255, 108, 102, .3); background: rgba(90, 16, 17, .08); }
+.error-report-card.available > div b { color: #ff8c87; }
 .integration-message { margin: 10px 0 0; color: #82a0a8; font: 550 8px/1.5 var(--font-geist-mono), monospace; }
 .overlay-only .control-button, .overlay-only .debug-button, .overlay-only .theme-button { display: none; }
 .overlay-only .control-panel, .overlay-only .control-scrim, .overlay-only .debug-panel, .overlay-only .debug-scrim { display: none !important; }
@@ -401,7 +410,7 @@ button:disabled { opacity: .36; cursor: not-allowed; }
   .debug-history-row small { display: none; }
   .incoming-chat-form > div { grid-template-columns: 1fr 1fr; }
   .incoming-chat-form button { grid-column: 1 / -1; min-height: 34px; }
-  .integration-grid, .update-card, .twitch-device-setup { grid-template-columns: 1fr; }
+  .integration-grid, .update-card, .error-report-card, .twitch-device-setup { grid-template-columns: 1fr; }
   .winner-card { top: 45%; width: min(var(--winner-card-width, 600px), calc(100vw - 24px)); padding: 25px 28px; }
   .winner-card h2 { width: calc(100% - 12px); font-size: clamp(24px, min(10vw, var(--winner-name-size, 45px)), 45px); letter-spacing: .045em; }
   .left-hud { left: 14px; }

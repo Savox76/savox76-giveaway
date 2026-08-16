@@ -17,6 +17,7 @@ REQUIRED_FILES = (
     "backend/savox_giveaway/__main__.py",
     "frontend/dist/index.html",
     "scripts/apply_update.py",
+    "scripts/error_report.py",
 )
 
 
@@ -117,9 +118,43 @@ def pause_after_error() -> None:
         pass
 
 
+def create_error_report(exc: BaseException, details: str) -> None:
+    try:
+        from scripts.error_report import ErrorReportStore, open_issue_report
+    except Exception as reporter_error:
+        print(f"Fehlerdiagnose konnte nicht geladen werden: {reporter_error}", file=sys.stderr)
+        return
+    report_directory = ROOT / ".updates" / "error-reports"
+    try:
+        version = project_version()
+    except Exception:
+        version = "unbekannt"
+    store = ErrorReportStore(report_directory, ROOT, version)
+    recent = store.latest(max_age_seconds=120)
+    if recent and "lokale Server wurde mit Fehlercode" in str(exc):
+        print(f"Fehlerbericht wurde bereits vorbereitet: {recent.issue_url}", file=sys.stderr)
+        return
+    report = store.capture_exception(
+        exc,
+        "Python-Starter",
+        context={
+            "Startphase": "Umgebung vorbereiten oder Server starten",
+            "Python-Programm": Path(sys.executable).name,
+        },
+        traceback_text=details,
+    )
+    local_report = report_directory / report.report_file if report.report_file else report_directory
+    print(f"Vorausgefüllter GitHub-Fehlerbericht: {report.issue_url}", file=sys.stderr)
+    print(f"Lokale Diagnose: {local_report}", file=sys.stderr)
+    open_issue_report(report)
+
+
 def main() -> int:
     python = prepare_environment()
     exit_code = run_server(python)
+    if exit_code == 98:
+        pause_after_error()
+        return 0
     if exit_code:
         raise RuntimeError(
             f"Der lokale Server wurde mit Fehlercode {exit_code} beendet. "
@@ -134,6 +169,7 @@ if __name__ == "__main__":
     except Exception as exc:
         details = traceback.format_exc()
         write_log(details)
+        create_error_report(exc, details)
         print(f"\nSavox76 Giveaway konnte nicht gestartet werden:\n{exc}", file=sys.stderr)
         print(f"Fehlerprotokoll: {LOG_FILE}", file=sys.stderr)
         pause_after_error()

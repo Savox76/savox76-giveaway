@@ -9,3 +9,8 @@
 - Der lokale Server bindet ausschließlich an `127.0.0.1` und ist nicht aus dem Netzwerk erreichbar.
 
 Bitte keine Zugangsdaten, Tokens oder Client-Secrets in Issues oder Logdateien veröffentlichen.
+
+Der automatische Fehlerbericht ist ausschließlich für gewöhnliche Programmfehler vorgesehen. Er
+entfernt bekannte Tokenformate und lokale Benutzerpfade, ersetzt aber keine abschließende Prüfung
+durch den Nutzer. Enthält ein Bericht möglicherweise sicherheitsrelevante oder persönliche Daten,
+darf er nicht als öffentliches GitHub-Issue abgesendet werden.

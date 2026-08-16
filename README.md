@@ -49,7 +49,7 @@ entpackt sein. Die installierte Version steht zusätzlich oben links in der Cont
 - empfohlene OBS-Größe: 1920 × 1080
 
 Der Server lauscht ausschließlich auf `127.0.0.1` und ist nicht öffentlich oder im Heimnetz
-erreichbar. Der Port lässt sich unter **GitHub & Updates** ändern. Nach dem Speichern muss das
+erreichbar. Der Port lässt sich unter **System & Updates** ändern. Nach dem Speichern muss das
 Tool neu gestartet und die OBS-Adresse auf den gewählten Port angepasst werden. Der Twitch-
 Geräte-Login ist unabhängig vom lokalen Port.
 
@@ -124,10 +124,28 @@ eine neuere geprüfte Version vorliegt, geschieht automatisch Folgendes:
 
 Die letzten drei Sicherungen bleiben erhalten. Lokale Twitch-Zugangsdaten, Einstellungen, die
 `.venv`-Umgebung und nicht vom Programm verwaltete Dateien werden nicht überschrieben. Da das
-Repository öffentlich ist, wird kein GitHub-Token benötigt.
+Repository öffentlich ist, wird kein GitHub-Token benötigt. Die Updatequelle ist fest auf das
+offizielle Repository `Savox76/savox76-giveaway` eingestellt und wird weder in der Control-
+Ansicht angezeigt noch über die lokale Konfiguration veränderbar gemacht.
 
 Der Wechsel von der alten ausführbaren Version `v0.1.0` auf die Python-Version erfordert einmalig
 den manuellen Download des neuen Python-ZIPs. Ab `v0.2.0` funktionieren weitere Updates automatisch.
+
+## Fehlerdiagnose und GitHub-Bericht
+
+Unerwartete Fehler im Python-Starter, im lokalen Server, in Hintergrundaufgaben und in der
+Browseroberfläche erzeugen automatisch einen Diagnosebericht. Er enthält Programmversion,
+Betriebssystem, Python- und Paketversionen, betroffene Komponente, sicheren Laufzeitkontext,
+Fehlerfingerabdruck und den bereinigten Stacktrace. Erwartbare Bedienfehler, eine fehlende
+Internetverbindung oder eine vorübergehend getrennte Twitch-Verbindung gelten nicht als
+Programmfehler.
+
+Vor der Speicherung entfernt das Tool bekannte Tokens, Zugangsdaten und lokale Benutzerpfade.
+Die letzten zehn Berichte bleiben lokal im Ordner `.updates/error-reports`; gleiche Fehler werden
+innerhalb von zehn Minuten zusammengefasst. Bei einem Startfehler öffnet sich GitHub direkt mit
+dem vorausgefüllten Bericht. Bei einem Fehler während der Laufzeit erscheint unter **System &
+Updates** der Button **Vorausgefüllten GitHub-Bericht öffnen**. Der Nutzer prüft den Inhalt und
+sendet das Issue anschließend selbst ab; im Tool ist dafür kein GitHub-Schreibschlüssel hinterlegt.
 
 ## Twitch einmalig einrichten
 
@@ -164,3 +182,5 @@ ist ohne vorherige schriftliche Genehmigung nicht erlaubt.
 Konfiguration und Twitch-Tokens werden nicht eingecheckt. Geheimnisse liegen im Schlüsselspeicher
 des Betriebssystems; Darstellungswerte, Kampfhistorie und Siegerstatistik bleiben lokal auf dem
 Streaming-PC. Das gilt ebenfalls für den automatisch gesicherten Stand einer aktiven Runde.
+Fehlerberichte werden zunächst ausschließlich lokal gespeichert und erst nach der sichtbaren
+Bestätigung des Nutzers über das vorausgefüllte GitHub-Formular veröffentlicht.

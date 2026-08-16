@@ -59,13 +59,21 @@ type UpdateStatus = {
   size?: number;
 };
 
+type ErrorReportStatus = {
+  available: boolean;
+  created_at?: string;
+  fingerprint?: string;
+  component?: string;
+  error_type?: string;
+  summary?: string;
+  issue_url?: string;
+};
+
 type BackendSettings = {
   channel_login: string;
   twitch_client_id: string;
   twitch_client_secret_set: boolean;
   server_port: number;
-  github_owner: string;
-  github_repo: string;
   auto_update: boolean;
   open_browser_on_start: boolean;
 };
@@ -117,8 +125,6 @@ const DEFAULT_BACKEND_SETTINGS: BackendSettings = {
   twitch_client_id: "",
   twitch_client_secret_set: false,
   server_port: 8766,
-  github_owner: "Savox76",
-  github_repo: "savox76-giveaway",
   auto_update: true,
   open_browser_on_start: true,
 };
@@ -1127,7 +1133,8 @@ export default function Home() {
   const [twitchMessage, setTwitchMessage] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.3.2");
+  const [errorReport, setErrorReport] = useState<ErrorReportStatus>({ available: false });
+  const [appVersion, setAppVersion] = useState("0.3.4");
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
   const [clientId] = useState(() => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `client-${Date.now()}-${Math.random()}`);
@@ -1175,17 +1182,66 @@ export default function Home() {
     Promise.all([
       fetch("/api/settings").then((response) => response.ok ? response.json() : Promise.reject(new Error("Einstellungen nicht erreichbar"))),
       fetch("/api/status").then((response) => response.ok ? response.json() : Promise.reject(new Error("Status nicht erreichbar"))),
-    ]).then(([settings, status]: [BackendSettings, { version: string; twitch: TwitchStatus; update: UpdateStatus }]) => {
+    ]).then(([settings, status]: [BackendSettings, { version: string; twitch: TwitchStatus; update: UpdateStatus; error_report: ErrorReportStatus }]) => {
       if (!active) return;
       setBackendSettings(settings);
       setChannel(settings.channel_login);
       setTwitchStatus(status.twitch);
       setUpdateStatus(status.update);
+      setErrorReport(status.error_report);
       setAppVersion(status.version);
     }).catch(() => {
       if (active) setIntegrationMessage("Lokaler Python-Server ist nicht erreichbar.");
     });
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let reporting = false;
+    const submitBrowserError = async (payload: Record<string, string>) => {
+      if (reporting) return;
+      reporting = true;
+      try {
+        const response = await fetch("/api/error-report/frontend", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...payload,
+            route: window.location.pathname,
+            viewport: `${window.innerWidth}x${window.innerHeight}`,
+            user_agent: navigator.userAgent,
+          }),
+        });
+        if (response.ok) setErrorReport(await response.json() as ErrorReportStatus);
+      } catch {
+        // Falls selbst die lokale API ausgefallen ist, übernimmt der Python-Starter die Diagnose.
+      } finally {
+        window.setTimeout(() => { reporting = false; }, 1000);
+      }
+    };
+    const handleError = (event: ErrorEvent) => {
+      void submitBrowserError({
+        error_type: event.error instanceof Error ? event.error.name : "FrontendError",
+        message: event.message || "Unbekannter Fehler in der Browseroberfläche",
+        stack: event.error instanceof Error ? event.error.stack || "" : "",
+        source: "Browseroberfläche",
+      });
+    };
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      void submitBrowserError({
+        error_type: reason instanceof Error ? reason.name : "UnhandledPromiseRejection",
+        message: reason instanceof Error ? reason.message : String(reason || "Unbekannte Promise-Ablehnung"),
+        stack: reason instanceof Error ? reason.stack || "" : "",
+        source: "Browser-Promise",
+      });
+    };
+    window.addEventListener("error", handleError);
+    window.addEventListener("unhandledrejection", handleRejection);
+    return () => {
+      window.removeEventListener("error", handleError);
+      window.removeEventListener("unhandledrejection", handleRejection);
+    };
   }, []);
 
   const addLog = (message: string) => {
@@ -1319,8 +1375,6 @@ export default function Home() {
           twitch_client_id: backendSettings.twitch_client_id,
           twitch_client_secret: null,
           server_port: backendSettings.server_port,
-          github_owner: backendSettings.github_owner,
-          github_repo: backendSettings.github_repo,
           auto_update: backendSettings.auto_update,
           open_browser_on_start: backendSettings.open_browser_on_start,
         }),
@@ -1440,6 +1494,9 @@ export default function Home() {
           setIntegrationMessage(`Version ${String(message.payload.version || "")} wird automatisch installiert …`);
         } else if (message.type === "update.error") {
           setIntegrationMessage(String(message.payload.message || "Updateprüfung fehlgeschlagen"));
+        } else if (message.type === "error.report") {
+          setErrorReport(message.payload as ErrorReportStatus);
+          setIntegrationMessage("Ein technischer Fehler wurde diagnostiziert. Der Bericht kann unten geprüft und an GitHub gesendet werden.");
         } else if (message.type === "overlay.status") {
           setOverlayConnectionCount(Number(message.payload.count || 0));
         } else if (message.type === "arena.restore") {
@@ -1794,15 +1851,18 @@ export default function Home() {
         </section>
 
         <section className="control-section update-settings">
-          <div className="section-title"><span>05</span><div><b>GITHUB & UPDATES</b><small>Quellcode, Releases und automatische Aktualisierung</small></div></div>
+          <div className="section-title"><span>05</span><div><b>SYSTEM & UPDATES</b><small>Lokaler Server, Diagnose und automatische Aktualisierung</small></div></div>
           <div className="integration-grid">
-            <label><span>GITHUB-BENUTZER</span><input value={backendSettings.github_owner} onChange={(event) => setBackendSettings((current) => ({ ...current, github_owner: event.target.value }))} /></label>
-            <label><span>REPOSITORY</span><input value={backendSettings.github_repo} onChange={(event) => setBackendSettings((current) => ({ ...current, github_repo: event.target.value }))} /></label>
             <label><span>LOKALER SERVER-PORT</span><input type="number" min="1024" max="65535" value={backendSettings.server_port} onChange={(event) => setBackendSettings((current) => ({ ...current, server_port: Number(event.target.value) }))} /></label>
           </div>
-          <p className="integration-note">Öffentliches Repository · Updateabruf ohne GitHub-Token · universelles Python-Paket<br />Portänderungen werden nach einem Neustart aktiv. Der neue Twitch-Geräte-Login benötigt keine Redirect-URL.</p>
+          <p className="integration-note">Die geprüfte Updatequelle ist fest im Tool hinterlegt und kann von Nutzern nicht verändert werden.<br />Portänderungen werden nach einem Neustart aktiv. Der Twitch-Geräte-Login benötigt keine Redirect-URL.</p>
           <label className="toggle-field"><input type="checkbox" checked={backendSettings.auto_update} onChange={(event) => setBackendSettings((current) => ({ ...current, auto_update: event.target.checked }))} /><span>Neue geprüfte Python-Releases automatisch installieren und neu starten</span></label>
           <div className={`update-card ${updateStatus.available ? "available" : ""}`}><div><span>INSTALLIERTE VERSION</span><b>v{appVersion}</b></div><p>{updateStatus.available ? `Version v${updateStatus.version} ist verfügbar.` : "Keine neuere geprüfte Version erkannt."}</p></div>
+          <div className={`error-report-card ${errorReport.available ? "available" : ""}`}>
+            <div><span>FEHLERDIAGNOSE</span><b>{errorReport.available ? "BERICHT BEREIT" : "ÜBERWACHUNG AKTIV"}</b></div>
+            <p>{errorReport.available ? `${errorReport.error_type || "Fehler"} · ${errorReport.component || "Tool"} · ID ${errorReport.fingerprint || "unbekannt"}` : "Bei einem technischen Fehler werden Version, Systemzustand und bereinigter Stacktrace lokal vorbereitet."}</p>
+            {errorReport.available && errorReport.issue_url && <a href={errorReport.issue_url} target="_blank" rel="noreferrer">VORAUSGEFÜLLTEN GITHUB-BERICHT ÖFFNEN ↗</a>}
+          </div>
           <div className="integration-actions"><button type="button" onClick={() => void saveIntegrationSettings()}>EINSTELLUNGEN SPEICHERN</button><button type="button" onClick={checkForUpdates}>JETZT PRÜFEN</button>{updateStatus.available && <button className="update-now" type="button" onClick={installUpdate}>UPDATE INSTALLIEREN</button>}</div>
           {integrationMessage && <p className="integration-message">{integrationMessage}</p>}
         </section>

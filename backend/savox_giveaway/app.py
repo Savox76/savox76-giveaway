@@ -11,11 +11,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
+
+from scripts.error_report import ErrorReport, ErrorReportStore
 
 from . import __version__
 from .arena_state import ArenaStateStore
@@ -25,7 +27,7 @@ from .game import THEME_IDS, ArenaGame
 from .secrets import SecretStore
 from .stats import WinnerStatsStore
 from .twitch import TwitchService
-from .updater import GitHubUpdater, UpdateInfo, exit_after_delay, update_to_dict
+from .updater import GitHubUpdater, UpdateInfo, exit_after_delay, project_root, update_to_dict
 
 
 def frontend_directory() -> Path:
@@ -39,8 +41,6 @@ class SettingsPayload(BaseModel):
     twitch_client_id: str = Field(default="", max_length=80)
     twitch_client_secret: str | None = Field(default=None, max_length=200)
     server_port: int = Field(default=DEFAULT_SERVER_PORT, ge=1024, le=65535)
-    github_owner: str = Field(default="Savox76", max_length=100)
-    github_repo: str = Field(default="savox76-giveaway", max_length=100)
     auto_update: bool = True
     open_browser_on_start: bool = True
 
@@ -128,8 +128,19 @@ class ArenaPresentationPayload(BaseModel):
     themeId: str | None = Field(default=None, max_length=30)
 
 
+class FrontendErrorPayload(BaseModel):
+    error_type: str = Field(default="FrontendError", max_length=100)
+    message: str = Field(min_length=1, max_length=2000)
+    stack: str = Field(default="", max_length=20_000)
+    source: str = Field(default="Browseroberfläche", max_length=200)
+    route: str = Field(default="", max_length=100)
+    viewport: str = Field(default="", max_length=40)
+    user_agent: str = Field(default="", max_length=600)
+
+
 class ApplicationState:
     def __init__(self, config: ConfigStore | None = None, secret_store: SecretStore | None = None) -> None:
+        provided_config = config is not None
         self.config = config or ConfigStore()
         self.secrets = secret_store or SecretStore()
         self.events = EventBus()
@@ -154,14 +165,41 @@ class ApplicationState:
         self.overlay_connections: set[WebSocket] = set()
         self.latest_update: UpdateInfo | None = None
         self.update_task: asyncio.Task[None] | None = None
+        root = project_root()
+        report_directory = (
+            self.config.path.parent / "error-reports"
+            if provided_config
+            else root / ".updates" / "error-reports"
+        )
+        self.error_reports = ErrorReportStore(report_directory, root, __version__)
 
     def updater(self) -> GitHubUpdater:
+        return GitHubUpdater(current_version=__version__)
+
+    def diagnostic_context(self) -> dict[str, Any]:
+        arena = self.arena.state
         settings = self.config.load()
-        return GitHubUpdater(
-            owner=settings.github_owner,
-            repo=settings.github_repo,
-            current_version=__version__,
-        )
+        return {
+            "Arena-Phase": arena.get("phase", "unbekannt"),
+            "Teilnehmerzahl": len(arena.get("combatants", [])),
+            "Event-Theme": arena.get("themeId", "unbekannt"),
+            "Twitch konfiguriert": self.twitch.status.configured,
+            "Twitch verbunden": self.twitch.status.connected,
+            "Stream live": self.twitch.status.live,
+            "OBS-Verbindungen": len(self.overlay_connections),
+            "Auto-Update": settings.auto_update,
+            "Server-Port": settings.server_port,
+        }
+
+    def capture_error(
+        self,
+        exc: BaseException,
+        component: str,
+        context: dict[str, Any] | None = None,
+    ) -> ErrorReport:
+        diagnostics = self.diagnostic_context()
+        diagnostics.update(context or {})
+        return self.error_reports.capture_exception(exc, component, context=diagnostics)
 
     async def check_update(self) -> UpdateInfo | None:
         self.latest_update = await self.updater().check()
@@ -190,6 +228,25 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        loop = asyncio.get_running_loop()
+        previous_exception_handler = loop.get_exception_handler()
+
+        def report_async_exception(current_loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+            exc = context.get("exception")
+            if not isinstance(exc, BaseException):
+                exc = RuntimeError(str(context.get("message") or "Unbekannter Hintergrundfehler"))
+            report = app_state.capture_error(
+                exc,
+                "Hintergrundaufgabe",
+                {"Task": str(context.get("task") or context.get("future") or "unbekannt")},
+            )
+            current_loop.create_task(app_state.events.publish("error.report", report.status()))
+            if previous_exception_handler:
+                previous_exception_handler(current_loop, context)
+            else:
+                current_loop.default_exception_handler(context)
+
+        loop.set_exception_handler(report_async_exception)
         await app_state.twitch.start()
         await app_state.arena.start()
         app_state.update_task = asyncio.create_task(app_state.update_watch(), name="github-update-watch")
@@ -200,6 +257,7 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
                 await app_state.update_task
         await app_state.arena.stop()
         await app_state.twitch.stop()
+        loop.set_exception_handler(previous_exception_handler)
 
     app = FastAPI(title="Savox76 Giveaway System", version=__version__, lifespan=lifespan)
     app.state.savox = app_state
@@ -211,12 +269,26 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         allow_headers=["Content-Type"],
     )
 
+    @app.middleware("http")
+    async def report_unhandled_request_errors(request: Request, call_next: Any) -> Any:
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            report = app_state.capture_error(
+                exc,
+                "Lokale API",
+                {"Anfrage": f"{request.method} {request.url.path}"},
+            )
+            await app_state.events.publish("error.report", report.status())
+            raise
+
     @app.get("/api/status")
     async def status() -> dict[str, Any]:
         return {
             "version": __version__,
             "twitch": app_state.twitch.status.as_dict(),
             "update": update_to_dict(app_state.latest_update),
+            "error_report": app_state.error_reports.status(),
             "mode": "python",
         }
 
@@ -233,8 +305,6 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
             channel_login=payload.channel_login,
             twitch_client_id=payload.twitch_client_id,
             server_port=payload.server_port,
-            github_owner=payload.github_owner,
-            github_repo=payload.github_repo,
             auto_update=payload.auto_update,
             open_browser_on_start=payload.open_browser_on_start,
         )
@@ -244,6 +314,27 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         app_state.twitch.refresh_configuration_status()
         await app_state.twitch.restart()
         return await get_settings()
+
+    @app.get("/api/error-report")
+    async def error_report_status() -> dict[str, Any]:
+        return app_state.error_reports.status()
+
+    @app.post("/api/error-report/frontend")
+    async def report_frontend_error(payload: FrontendErrorPayload) -> dict[str, Any]:
+        report = app_state.error_reports.capture_text(
+            error_type=payload.error_type,
+            message=payload.message,
+            trace=payload.stack,
+            component=payload.source,
+            context={
+                **app_state.diagnostic_context(),
+                "Browser-Route": payload.route,
+                "Fenstergröße": payload.viewport,
+                "Browser": payload.user_agent,
+            },
+        )
+        await app_state.events.publish("error.report", report.status())
+        return report.status()
 
     @app.get("/api/twitch/login", response_model=None)
     async def twitch_login() -> RedirectResponse | HTMLResponse:

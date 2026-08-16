@@ -17,6 +17,7 @@ FILES = (
     "LICENSE",
     "SECURITY.md",
     "scripts/apply_update.py",
+    "scripts/error_report.py",
 )
 DIRECTORIES = (
     "backend/savox_giveaway",

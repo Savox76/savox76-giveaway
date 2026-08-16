@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from savox_giveaway.updater import (
     ARCHIVE_NAME,
+    GitHubUpdater,
     extract_update_archive,
     is_newer_version,
     release_asset_name,
@@ -25,6 +26,13 @@ def test_semantic_version_comparison() -> None:
 
 def test_release_asset_is_universal() -> None:
     assert release_asset_name() == ARCHIVE_NAME == "Savox76Giveaway-python.zip"
+
+
+def test_update_source_is_fixed_to_official_repository() -> None:
+    updater = GitHubUpdater(current_version="0.3.4")
+
+    assert updater.owner == "Savox76"
+    assert updater.repo == "savox76-giveaway"
 
 
 def test_extract_rejects_path_traversal(tmp_path: Path) -> None:

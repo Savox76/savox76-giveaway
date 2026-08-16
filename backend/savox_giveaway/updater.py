@@ -17,6 +17,8 @@ from typing import Any
 import httpx
 from packaging.version import InvalidVersion, Version
 
+from scripts.error_report import GITHUB_OWNER, GITHUB_REPOSITORY
+
 ARCHIVE_NAME = "Savox76Giveaway-python.zip"
 MANIFEST_NAME = ".savox-update.json"
 ENTRYPOINT_NAME = "Savox76Giveaway.py"
@@ -116,9 +118,9 @@ def validate_payload(payload_root: Path) -> dict[str, Any]:
 
 
 class GitHubUpdater:
-    def __init__(self, owner: str, repo: str, current_version: str) -> None:
-        self.owner = owner
-        self.repo = repo
+    def __init__(self, current_version: str) -> None:
+        self.owner = GITHUB_OWNER
+        self.repo = GITHUB_REPOSITORY
         self.current_version = current_version
 
     @staticmethod
