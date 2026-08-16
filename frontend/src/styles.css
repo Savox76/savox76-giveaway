@@ -99,6 +99,13 @@ button { font: inherit; }
 .status-cluster { display: flex; align-items: center; gap: 13px; }
 .status-pill { color: #b8eff7; border: 1px solid rgba(74, 226, 151, .2); background: rgba(27, 110, 71, .08); padding: 9px 13px; font: 650 10px/1 var(--font-geist-mono), monospace; letter-spacing: .14em; }
 .status-pill i { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #4be49a; box-shadow: 0 0 12px #4be49a; animation: pulse 1.6s infinite; }
+.twitch-connection { display: flex; align-items: center; min-height: 32px; padding: 0 11px; border: 1px solid currentColor; font: 700 9px/1 var(--font-geist-mono), monospace; letter-spacing: .12em; white-space: nowrap; }
+.twitch-connection i { width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 12px currentColor; }
+.twitch-inactive { color: #ff6b66; border-color: rgba(255, 82, 76, .42); background: rgba(130, 21, 20, .13); }
+.twitch-inactive i { animation: none; }
+.twitch-active { color: #ffae55; border-color: rgba(255, 158, 69, .42); background: rgba(142, 76, 14, .12); }
+.twitch-live { color: #55e995; border-color: rgba(74, 226, 151, .45); background: rgba(27, 110, 71, .14); }
+.twitch-active i, .twitch-live i { animation: pulse 1.6s infinite; }
 .icon-button { width: 38px; height: 38px; border: 1px solid var(--line); background: rgba(42, 198, 220, .06); color: var(--cyan); cursor: pointer; }
 .icon-button:hover { background: rgba(42, 198, 220, .14); }
 .control-button, .debug-button, .theme-button { height: 38px; padding: 0 14px; border: 1px solid rgba(82, 223, 244, .32); color: #a8edf7; background: rgba(42, 198, 220, .08); font: 650 9px var(--font-geist-mono), monospace; letter-spacing: .15em; cursor: pointer; }
@@ -379,6 +386,8 @@ button:disabled { opacity: .36; cursor: not-allowed; }
   .countdown { display: none; }
   .theme-surface .left-hud { display: none; }
   .theme-panel { width: min(500px, 100vw); }
+  .twitch-connection { max-width: 34px; overflow: hidden; padding: 0 12px; font-size: 0; }
+  .twitch-connection i { flex: 0 0 8px; margin: 0; }
 }
 @media (max-width: 640px) {
   .topbar { left: 14px; right: 14px; top: 14px; }
@@ -405,4 +414,4 @@ button:disabled { opacity: .36; cursor: not-allowed; }
   .theme-card { grid-template-columns: 68px minmax(0, 1fr) 43px; gap: 9px; }
   .theme-swatch { height: 52px; }
 }
-@media (prefers-reduced-motion: reduce) { .status-pill i, .deep-space-backdrop, .fallback-asteroids i, .event-theme-layer::before, .event-theme-layer::after, .event-theme-layer > i, .event-theme-layer > b { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .status-pill i, .twitch-connection i, .deep-space-backdrop, .fallback-asteroids i, .event-theme-layer::before, .event-theme-layer::after, .event-theme-layer > i, .event-theme-layer > b { animation: none; } }

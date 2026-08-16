@@ -29,6 +29,7 @@ class TwitchStatus:
     configured: bool = False
     authenticated: bool = False
     connected: bool = False
+    live: bool = False
     login: str = ""
     channel: str = ""
     message: str = "Nicht eingerichtet"
@@ -38,6 +39,7 @@ class TwitchStatus:
             "configured": self.configured,
             "authenticated": self.authenticated,
             "connected": self.connected,
+            "live": self.live,
             "login": self.login,
             "channel": self.channel,
             "message": self.message,
@@ -52,6 +54,7 @@ class TwitchService:
     chat_handler: Callable[[str, str], Awaitable[None]] | None = None
     status: TwitchStatus = field(default_factory=TwitchStatus)
     _task: asyncio.Task[None] | None = None
+    _live_task: asyncio.Task[None] | None = None
     _device_task: asyncio.Task[None] | None = None
     _stop: asyncio.Event = field(default_factory=asyncio.Event)
     _seen_messages: deque[str] = field(default_factory=lambda: deque(maxlen=1000))
@@ -68,8 +71,10 @@ class TwitchService:
         self.status.authenticated = has_token
         self.status.channel = settings.channel_login
         if not self.status.configured:
+            self.status.live = False
             self.status.message = "Twitch-App noch nicht eingerichtet"
         elif not self.status.authenticated:
+            self.status.live = False
             self.status.message = "Twitch-Anmeldung erforderlich"
 
     async def start_device_authorization(self) -> str:
@@ -95,6 +100,7 @@ class TwitchService:
         verification_uri = self._verification_url(verification_uri, user_code)
         self.status.authenticated = False
         self.status.connected = False
+        self.status.live = False
         self.status.message = f"Twitch-Freigabe im Browser bestätigen · Code {user_code}"
         await self._publish_status()
         self._device_task = asyncio.create_task(
@@ -149,6 +155,7 @@ class TwitchService:
         except Exception as exc:
             self.status.authenticated = False
             self.status.connected = False
+            self.status.live = False
             self.status.message = str(exc)[:160]
             await self._publish_status()
         finally:
@@ -191,6 +198,7 @@ class TwitchService:
             return
         self._stop.clear()
         self._task = asyncio.create_task(self._run(), name="twitch-eventsub")
+        self._live_task = asyncio.create_task(self._watch_live_status(), name="twitch-live-status")
 
     async def stop(self) -> None:
         self._stop.set()
@@ -199,8 +207,14 @@ class TwitchService:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
+        if self._live_task:
+            self._live_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._live_task
         self._task = None
+        self._live_task = None
         self.status.connected = False
+        self.status.live = False
         await self._publish_status()
 
     async def restart(self) -> None:
@@ -221,6 +235,7 @@ class TwitchService:
                 raise
             except Exception as exc:
                 self.status.connected = False
+                self.status.live = False
                 self.status.message = f"Twitch getrennt: {str(exc)[:120]}"
                 await self._publish_status()
                 await asyncio.sleep(retry_seconds)
@@ -284,6 +299,45 @@ class TwitchService:
         if not users:
             raise RuntimeError(f"Twitch-Kanal #{channel} wurde nicht gefunden")
         return str(users[0]["id"])
+
+    async def _watch_live_status(self) -> None:
+        while not self._stop.is_set():
+            delay = 2
+            if self.status.connected and self._broadcaster_id:
+                try:
+                    await self._refresh_live_status()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # Der Live-Check darf die funktionierende Chat-Verbindung nicht unterbrechen.
+                    pass
+                delay = 45
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=delay)
+            except TimeoutError:
+                pass
+
+    async def _refresh_live_status(self) -> None:
+        if not self._broadcaster_id:
+            return
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(
+                f"{TWITCH_API_URL}/streams",
+                params={"user_id": self._broadcaster_id, "first": 1},
+                headers=self._api_headers(),
+            )
+            if response.status_code == 401:
+                await self._refresh_token()
+                response = await client.get(
+                    f"{TWITCH_API_URL}/streams",
+                    params={"user_id": self._broadcaster_id, "first": 1},
+                    headers=self._api_headers(),
+                )
+            response.raise_for_status()
+            live = bool(response.json().get("data", []))
+        if live != self.status.live:
+            self.status.live = live
+            await self._publish_status()
 
     async def _eventsub_loop(self) -> None:
         url = TWITCH_EVENTSUB_URL

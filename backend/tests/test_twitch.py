@@ -32,6 +32,51 @@ def test_device_verification_url_receives_public_code():
     assert url == "https://www.twitch.tv/activate?public=true&device-code=ABCDEFGH"
 
 
+def test_status_contains_live_state(tmp_path):
+    service = TwitchService(ConfigStore(tmp_path / "config.json"), MemorySecrets(), EventBus())
+
+    assert service.status.as_dict()["live"] is False
+
+
+@pytest.mark.asyncio
+async def test_live_status_uses_twitch_streams_endpoint(tmp_path, monkeypatch):
+    config = ConfigStore(tmp_path / "config.json")
+    config.save(AppSettings(channel_login="savox76", twitch_client_id="public-client-id"))
+    secrets = MemorySecrets()
+    secrets.set("twitch_access_token", "access-token")
+    service = TwitchService(config, secrets, EventBus())
+    service._broadcaster_id = "12345"
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"data": [{"id": "live-stream"}]}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def get(self, url, **kwargs):
+            assert url.endswith("/streams")
+            assert kwargs["params"] == {"user_id": "12345", "first": 1}
+            return FakeResponse()
+
+    monkeypatch.setattr("savox_giveaway.twitch.httpx.AsyncClient", lambda **_kwargs: FakeClient())
+
+    await service._refresh_live_status()
+
+    assert service.status.live is True
+
+
 @pytest.mark.asyncio
 async def test_device_login_needs_only_client_id(tmp_path, monkeypatch):
     config = ConfigStore(tmp_path / "config.json")

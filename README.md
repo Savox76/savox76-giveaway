@@ -67,6 +67,11 @@ Statuszeile, ob und wie viele OBS-Overlays verbunden sind. Ist das Overlay in OB
 ausgeblendet, bleibt die Twitch-Anmeldung trotzdem geöffnet und der Kampf wird serverseitig
 weitergerechnet; beim erneuten Einblenden erscheint sofort der aktuelle Stand.
 
+Oben im Control-Fenster zeigt eine zusätzliche Twitch-Ampel den tatsächlichen Betriebszustand:
+Rot bedeutet keine Chatverbindung, Orange einen verbundenen Twitch-Chat bei offline geschaltetem
+Kanal und Grün einen aktiven Livestream. Während Twitch verbunden ist, fragt das Tool den
+Live-Status ungefähr alle 45 Sekunden ab. Die Ampel wird in der OBS-Browserquelle nicht angezeigt.
+
 Der letzte Giveaway-Zustand wird regelmäßig in `arena-state.json` gesichert. Nach einem Browser-
 oder Tool-Neustart werden Teilnehmer, Runde, HP, Countdown, Claim-Zeit und das gewählte Theme
 wiederhergestellt.
