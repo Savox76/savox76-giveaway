@@ -7,6 +7,7 @@ type ShipClass = "frigate" | "cruiser";
 type Phase = "idle" | "registration" | "countdown" | "battle" | "winner";
 type ClaimStatus = "none" | "pending" | "claimed" | "expired";
 type ArenaSoundCue = "toggle" | "countdown" | "battle" | "destroyed" | "winner" | "claim";
+type ThemeId = "standard" | "easter" | "christmas" | "halloween" | "anniversary";
 
 type Combatant = {
   id: string;
@@ -86,6 +87,7 @@ type ArenaStateMessage = {
   frigateFireRate: number;
   cruiserFireRate: number;
   soundOn: boolean;
+  themeId: ThemeId;
   updatedAt: number;
   activeRoundId: string | null;
   battleStartedAt: number | null;
@@ -139,6 +141,15 @@ const CLASS_STATS = {
 } as const;
 
 const BALANCED_FIRE_RATES = { frigate: 1.55, cruiser: 2.35 } as const;
+const ignoreArenaEvent = () => undefined;
+
+const EVENT_THEMES: { id: ThemeId; name: string; tag: string; description: string }[] = [
+  { id: "standard", name: "Standard", tag: "VOID", description: "Das unveränderte Savox76 Weltraum-Layout." },
+  { id: "easter", name: "Ostern", tag: "SPRING", description: "Pastellfarbene Energie, leuchtende Partikel und Frühlingsakzente." },
+  { id: "christmas", name: "Weihnachten", tag: "XMAS", description: "Kühles Sternenlicht mit dezenten roten und goldenen Signalen." },
+  { id: "halloween", name: "Halloween", tag: "HAUNTED", description: "Dunkle violette Anomalie mit warmem Kürbisglühen." },
+  { id: "anniversary", name: "Kanaljubiläum", tag: "CELEBRATE", description: "Goldene Impulse und festliche Energie für den Kanalgeburtstag." },
+];
 
 let arenaAudioContext: AudioContext | null = null;
 
@@ -183,11 +194,6 @@ function playArenaSound(cue: ArenaSoundCue) {
     });
   }).catch(() => undefined);
 }
-
-const DEMO_NAMES = [
-  "Voidrider", "NovaFox", "IronWolf", "Starling", "Orbital", "Nebula",
-  "Valkyrie", "PixelPilot", "DarkMatter", "AstroByte", "Moonshot", "Raven",
-];
 
 const clampFireRate = (value: number, fallback: number) => Number.isFinite(value) ? Math.min(8, Math.max(0.2, value)) : fallback;
 
@@ -239,33 +245,6 @@ function simulateBalanceBatch(rounds: number, participantCount: number, frigateF
     averageDuration: totalDuration / rounds,
     averageShots: totalShots / rounds,
   };
-}
-
-function createTestNames(count: number) {
-  return Array.from({ length: count }, (_, index) => DEMO_NAMES[index] ?? `TestPilot_${String(index + 1).padStart(2, "0")}`);
-}
-
-function secureShuffle<T>(items: T[]) {
-  const result = [...items];
-  const random = new Uint32Array(result.length || 1);
-  if (typeof crypto !== "undefined") crypto.getRandomValues(random);
-  for (let i = result.length - 1; i > 0; i--) {
-    const value = random[i] ?? Math.floor(Math.random() * 2 ** 32);
-    const j = value % (i + 1);
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
-}
-
-function balanceFleet(names: string[]): Combatant[] {
-  const shuffled = secureShuffle(names);
-  const cruiserCount = Math.floor(names.length / 4);
-  const cruisers = new Set(shuffled.slice(0, cruiserCount).map((name) => name.toLocaleLowerCase()));
-  return names.map((name, index) => {
-    const shipClass: ShipClass = cruisers.has(name.toLocaleLowerCase()) ? "cruiser" : "frigate";
-    const maxHp = CLASS_STATS[shipClass].hp;
-    return { id: `${name.toLocaleLowerCase().replace(/[^a-z0-9]/g, "-")}-${index}`, name, shipClass, hp: maxHp, maxHp, alive: true, kills: 0 };
-  });
 }
 
 function createHull(shipClass: ShipClass, accent: number) {
@@ -1113,6 +1092,7 @@ function formatClock(date: Date) {
 
 export default function Home() {
   const overlayOnly = window.location.pathname === "/overlay";
+  const themesOnly = window.location.pathname === "/themes";
   const [combatants, setCombatants] = useState<Combatant[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [battleId, setBattleId] = useState(0);
@@ -1123,7 +1103,8 @@ export default function Home() {
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>("none");
   const [claimSeconds, setClaimSeconds] = useState(60);
   const [soundOn, setSoundOn] = useState(true);
-  const [controlOpen, setControlOpen] = useState(!overlayOnly);
+  const [themeId, setThemeId] = useState<ThemeId>("standard");
+  const [controlOpen, setControlOpen] = useState(!overlayOnly && !themesOnly);
   const [debugOpen, setDebugOpen] = useState(false);
   const [joinName, setJoinName] = useState("");
   const [chatSender, setChatSender] = useState("");
@@ -1143,23 +1124,13 @@ export default function Home() {
   const [twitchMessage, setTwitchMessage] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.2.10");
+  const [appVersion, setAppVersion] = useState("0.3.0");
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
-  const [arenaReady, setArenaReady] = useState(false);
   const [clientId] = useState(() => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `client-${Date.now()}-${Math.random()}`);
   const socketRef = useRef<WebSocket | null>(null);
   const soundOnRef = useRef(soundOn);
-  const arenaStateRef = useRef<ArenaStateMessage | null>(null);
-  const testModeRef = useRef(false);
-  const activeRoundIdRef = useRef<string | null>(null);
-  const hasRestoredArenaRef = useRef(false);
   const arenaRestoreHandlerRef = useRef<(state: ArenaStateMessage | null) => void>(() => undefined);
-  const chatCommandCooldownsRef = useRef(new Map<string, number>());
-  const countdownTimerRef = useRef<number | null>(null);
-  const claimTimerRef = useRef<number | null>(null);
-  const battleStartedAtRef = useRef<number | null>(null);
-  const incomingChatHandlerRef = useRef<(sender: string, message: string) => void>(() => undefined);
   const [logs, setLogs] = useState<{ time: string; message: string }[]>([
     { time: "SYS", message: "Derzeit kein Giveaway aktiv" },
   ]);
@@ -1171,18 +1142,6 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       const storedChannel = window.localStorage.getItem("savox-twitch-channel");
       if (storedChannel) setChannel(storedChannel);
-      const storedScale = Number(window.localStorage.getItem("savox-ship-scale"));
-      if (storedScale >= 0.45 && storedScale <= 1) setShipScale(storedScale);
-      const storedCommand = window.localStorage.getItem("savox-join-command");
-      if (storedCommand) setJoinCommand(storedCommand);
-      const storedTitle = window.localStorage.getItem("savox-arena-title");
-      if (storedTitle) setArenaTitle(storedTitle);
-      const storedFrigateRate = Number(window.localStorage.getItem("savox-frigate-fire-rate"));
-      if (storedFrigateRate >= 0.2 && storedFrigateRate <= 8) setFrigateFireRate(storedFrigateRate);
-      const storedCruiserRate = Number(window.localStorage.getItem("savox-cruiser-fire-rate"));
-      if (storedCruiserRate >= 0.2 && storedCruiserRate <= 8) setCruiserFireRate(storedCruiserRate);
-      const storedSound = window.localStorage.getItem("savox-sound-on");
-      if (storedSound !== null) setSoundOn(storedSound === "true");
       const storedHistory = window.localStorage.getItem("savox-battle-history");
       if (storedHistory) {
         try {
@@ -1197,7 +1156,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (overlayOnly) return;
+    if (overlayOnly || themesOnly) return;
     let active = true;
     fetch("/api/stats/winners")
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
@@ -1206,7 +1165,7 @@ export default function Home() {
       })
       .catch(() => undefined);
     return () => { active = false; };
-  }, [overlayOnly]);
+  }, [overlayOnly, themesOnly]);
 
   useEffect(() => {
     let active = true;
@@ -1226,11 +1185,6 @@ export default function Home() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => () => {
-    if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
-    if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-  }, []);
-
   const addLog = (message: string) => {
     setLogs((current) => [{ time: formatClock(new Date()), message }, ...current].slice(0, 7));
   };
@@ -1239,93 +1193,23 @@ export default function Home() {
     setChatMessages((current) => [{ time: formatClock(new Date()), message }, ...current].slice(0, 6));
   };
 
-  const postChat = (message: string) => {
-    recordChat(message);
-    if (twitchStatus.connected) {
-      void fetch("/api/twitch/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
-      }).catch(() => undefined);
-    }
+  const arenaRequest = async (path: string, method = "POST", body?: Record<string, unknown>) => {
+    const response = await fetch(`/api/arena${path}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || "Arena-Aktion fehlgeschlagen");
+    return payload as ArenaStateMessage;
   };
 
-  const refreshWinnerLeaders = () => {
-    if (overlayOnly) return;
-    void fetch("/api/stats/winners")
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
-      .then((payload: WinnerLeader[]) => setWinnerLeaders(payload))
-      .catch(() => undefined);
-  };
-
-  const handleChatCommand = (sender: string, rawMessage: string) => {
-    const [rawCommand, requestedName] = rawMessage.trim().split(/\s+/, 2);
-    const command = rawCommand.toLocaleLowerCase();
-    if (!["!wins", "!top3", "!giveaway"].includes(command)) return false;
-    const cooldownKey = command === "!wins" ? `${command}:${sender.toLocaleLowerCase()}` : command;
-    const now = Date.now();
-    if (now - (chatCommandCooldownsRef.current.get(cooldownKey) ?? 0) < 5000) return true;
-    if (chatCommandCooldownsRef.current.size > 500) chatCommandCooldownsRef.current.clear();
-    chatCommandCooldownsRef.current.set(cooldownKey, now);
-    if (command === "!wins") {
-      const target = (requestedName || sender).replace(/^@/, "").slice(0, 25);
-      void fetch(`/api/stats/winner?name=${encodeURIComponent(target)}`)
-        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
-        .then((pilot: WinnerLeader) => {
-          postChat(`@${sender}: ${pilot.name || target} hat ${pilot.wins} ${pilot.wins === 1 ? "Sieg" : "Siege"} aus ${pilot.participations} ${pilot.participations === 1 ? "Teilnahme" : "Teilnahmen"}.`);
-        })
-        .catch(() => postChat(`@${sender}, die Siegerstatistik ist gerade nicht erreichbar.`));
-      return true;
+  const updatePresentation = async (values: Record<string, unknown>) => {
+    try {
+      await arenaRequest("/presentation", "PUT", values);
+    } catch (error) {
+      setIntegrationMessage(error instanceof Error ? error.message : "Darstellung konnte nicht gespeichert werden");
     }
-    if (command === "!top3") {
-      void fetch("/api/stats/winners")
-        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
-        .then((leaders: WinnerLeader[]) => {
-          setWinnerLeaders(leaders);
-          const top = leaders.filter((pilot) => pilot.wins > 0).slice(0, 3);
-          postChat(top.length
-            ? `Alltime Top ${top.length}: ${top.map((pilot, index) => `${index + 1}. ${pilot.name} (${pilot.wins})`).join(" · ")}`
-            : "Noch wurden keine Alltime-Siege aufgezeichnet.");
-        })
-        .catch(() => postChat("Die Siegerstatistik ist gerade nicht erreichbar."));
-      return true;
-    }
-    if (command === "!giveaway") {
-      const alive = combatants.filter((entry) => entry.alive).length;
-      const status = phase === "idle"
-        ? "Derzeit ist kein Giveaway aktiv."
-        : phase === "registration"
-          ? `Giveaway offen: ${combatants.length} Piloten angemeldet. Mit ${joinCommand} teilnehmen.`
-          : phase === "countdown"
-            ? `Die Anmeldung ist geschlossen. Das Gefecht startet in ${countdown}.`
-            : phase === "battle"
-              ? `Das Gefecht läuft: ${alive} von ${combatants.length} Piloten verbleiben.`
-              : claimStatus === "pending"
-                ? `Gewinner ist @${winner?.name ?? "unbekannt"}. Der Claim läuft noch ${claimSeconds} Sekunden.`
-                : claimStatus === "claimed"
-                  ? `@${winner?.name ?? "Der Gewinner"} hat den Gewinn bestätigt.`
-                  : "Der Gewinn wurde nicht rechtzeitig geclaimt. Ein Rematch ist möglich.";
-      postChat(status);
-      return true;
-    }
-    return false;
-  };
-
-  const recordRoundParticipants = (names: string[], roundId: string) => {
-    if (testModeRef.current) return;
-    void fetch("/api/stats/participants", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ names, round_id: roundId }),
-    }).then((response) => {
-      if (!response.ok) throw new Error("Teilnahmen konnten nicht gespeichert werden");
-      refreshWinnerLeaders();
-    }).catch(() => undefined);
-  };
-
-  const emitSoundCue = (cue: ArenaSoundCue) => {
-    if (overlayOnly || !soundOnRef.current || socketRef.current?.readyState !== WebSocket.OPEN) return;
-    socketRef.current.send(JSON.stringify({ type: "arena.sound", payload: { origin: clientId, cue } }));
   };
 
   const toggleSound = () => {
@@ -1333,66 +1217,20 @@ export default function Home() {
     const next = !soundOn;
     soundOnRef.current = next;
     setSoundOn(next);
-    window.localStorage.setItem("savox-sound-on", String(next));
     playArenaSound("toggle");
-    if (next) {
-      emitSoundCue("toggle");
-    }
+    void updatePresentation({ soundOn: next });
   };
 
-  const registerParticipantName = (rawName: string) => {
+  const registerParticipantName = async (rawName: string) => {
     const clean = rawName.trim().replace(/^@/, "").slice(0, 24);
     if (!clean || phase !== "registration") return;
-    if (combatants.some((entry) => entry.name.toLocaleLowerCase() === clean.toLocaleLowerCase())) {
-      postChat(`@${clean}, du bist bereits für dieses Giveaway angemeldet.`);
-      return;
-    }
-    setCombatants((current) => balanceFleet([...current.map((entry) => entry.name), clean]));
-    addLog(`${clean} tritt dem Giveaway bei`);
-    postChat(`@${clean}, du nimmst am Giveaway teil. Viel Glück!`);
+    await arenaRequest("/join", "POST", { name: clean }).catch((error) => setIntegrationMessage(String(error)));
   };
 
   const addParticipant = (event: FormEvent) => {
     event.preventDefault();
-    registerParticipantName(joinName);
+    void registerParticipantName(joinName);
     setJoinName("");
-  };
-
-  const expireClaim = (winnerName: string) => {
-    setClaimStatus("expired");
-    addLog(`${winnerName} hat den Gewinn nicht geclaimt`);
-    postChat(`@${winnerName} hat nicht rechtzeitig geantwortet. Eine neue Runde kann ohne Neuanmeldung gestartet werden.`);
-  };
-
-  const startClaimCountdown = (winnerName: string, initialSeconds = 60) => {
-    if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-    claimTimerRef.current = null;
-    let remaining = Math.max(0, Math.min(60, initialSeconds));
-    setClaimSeconds(remaining);
-    if (remaining <= 0) {
-      expireClaim(winnerName);
-      return;
-    }
-    claimTimerRef.current = window.setInterval(() => {
-      remaining -= 1;
-      setClaimSeconds(Math.max(0, remaining));
-      if (remaining <= 0) {
-        if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-        claimTimerRef.current = null;
-        expireClaim(winnerName);
-      }
-    }, 1000);
-  };
-
-  const confirmClaim = (sender: string) => {
-    if (phase !== "winner" || claimStatus !== "pending" || !winner || sender.toLocaleLowerCase() !== winner.name.toLocaleLowerCase()) return false;
-    if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-    claimTimerRef.current = null;
-    setClaimStatus("claimed");
-    addLog(`${winner.name} hat den Gewinn geclaimt`);
-    postChat(`@${winner.name} hat den Gewinn erfolgreich geclaimt!`);
-    emitSoundCue("claim");
-    return true;
   };
 
   const submitIncomingChat = (event: FormEvent) => {
@@ -1400,142 +1238,41 @@ export default function Home() {
     const sender = chatSender.trim().replace(/^@/, "").slice(0, 24);
     const message = incomingChatText.trim().slice(0, 140);
     if (!sender || !message) return;
-    recordChat(`@${sender}: ${message}`);
-    if (phase === "winner") confirmClaim(sender);
-    if (handleChatCommand(sender, message)) {
-      setIncomingChatText("");
-      return;
-    }
-    if (phase === "registration" && message.toLocaleLowerCase() === joinCommand.toLocaleLowerCase()) registerParticipantName(sender);
+    void arenaRequest("/chat", "POST", { sender, message }).catch((error) => setIntegrationMessage(String(error)));
     setIncomingChatText("");
   };
 
   const removeParticipant = (id: string) => {
     if (phase !== "registration") return;
-    setCombatants((current) => balanceFleet(current.filter((entry) => entry.id !== id).map((entry) => entry.name)));
+    void arenaRequest(`/participants/${encodeURIComponent(id)}`, "DELETE").catch((error) => setIntegrationMessage(String(error)));
   };
 
   const startGiveaway = () => {
-    testModeRef.current = false;
-    activeRoundIdRef.current = null;
-    battleStartedAtRef.current = null;
-    if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-    claimTimerRef.current = null;
-    setCombatants([]);
-    setWinner(null);
-    setWinnerAllTimeWins(0);
-    setClaimStatus("none");
-    setClaimSeconds(60);
-    setPhase("registration");
     setControlOpen(false);
-    addLog("Giveaway gestartet – Anmeldung offen");
-    postChat(`Giveaway gestartet! Schreibe ${joinCommand}, um teilzunehmen.`);
+    void arenaRequest("/start").catch((error) => setIntegrationMessage(String(error)));
   };
 
   const loadTestFleet = (count: number) => {
     if (phase === "battle" || phase === "countdown") return;
-    if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-    claimTimerRef.current = null;
-    testModeRef.current = true;
-    activeRoundIdRef.current = null;
-    battleStartedAtRef.current = null;
-    setCombatants(balanceFleet(createTestNames(count)));
-    setWinner(null);
-    setWinnerAllTimeWins(0);
-    setClaimStatus("none");
-    setClaimSeconds(60);
-    setPhase("registration");
-    addLog(`Test-Giveaway mit ${count} Piloten geladen`);
-    postChat(`Test-Giveaway gestartet: ${count} Teilnehmer sind angemeldet.`);
+    void arenaRequest(`/test/${count}`).catch((error) => setIntegrationMessage(String(error)));
   };
-
-  const launchBattle = (withSound = true) => {
-    battleStartedAtRef.current = Date.now();
-    setPhase("battle");
-    setBattleId((value) => value + 1);
-    addLog("Kampf freigegeben");
-    if (withSound) emitSoundCue("battle");
-  };
-
-  const runBattleCountdown = (initialCountdown = 3, withSound = true) => {
-    let remaining = Math.max(0, Math.min(3, initialCountdown));
-    setCountdown(remaining);
-    setPhase("countdown");
-    if (withSound && remaining > 0) emitSoundCue("countdown");
-    if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
-    if (remaining <= 0) {
-      countdownTimerRef.current = null;
-      launchBattle(withSound);
-      return;
-    }
-    countdownTimerRef.current = window.setInterval(() => {
-      remaining -= 1;
-      setCountdown(Math.max(0, remaining));
-      if (withSound && remaining > 0) emitSoundCue("countdown");
-      if (remaining <= 0) {
-        if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = null;
-        launchBattle(withSound);
-      }
-    }, 900);
-  };
-
-  const beginBattleCountdown = () => runBattleCountdown(3, true);
 
   const startBattle = () => {
     if (combatants.length < 2 || phase !== "registration") return;
-    const roundId = `round-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    activeRoundIdRef.current = roundId;
-    recordRoundParticipants(combatants.map((entry) => entry.name), roundId);
-    setCombatants(balanceFleet(combatants.map((entry) => entry.name)));
-    setWinner(null);
-    setWinnerAllTimeWins(0);
-    setClaimStatus("none");
     setControlOpen(false);
-    addLog("Anmeldung geschlossen");
-    postChat("Die Anmeldung ist geschlossen. Das Gefecht startet jetzt!");
-    beginBattleCountdown();
+    void arenaRequest("/battle").catch((error) => setIntegrationMessage(String(error)));
   };
 
   const startRematch = () => {
     if (combatants.length < 2 || phase !== "winner" || claimStatus !== "expired") return;
-    if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-    claimTimerRef.current = null;
-    const roundId = `round-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    activeRoundIdRef.current = roundId;
-    recordRoundParticipants(combatants.map((entry) => entry.name), roundId);
-    setCombatants(balanceFleet(combatants.map((entry) => entry.name)));
-    setWinner(null);
-    setWinnerAllTimeWins(0);
-    setClaimStatus("none");
-    setClaimSeconds(60);
-    setRound((value) => value + 1);
     setControlOpen(false);
-    addLog("Neue Runde mit gleicher Teilnehmerliste");
-    postChat("Der Gewinn wurde nicht geclaimt. Neue Runde mit denselben Teilnehmern – keine Neuanmeldung nötig!");
-    beginBattleCountdown();
+    void arenaRequest("/rematch").catch((error) => setIntegrationMessage(String(error)));
   };
 
   const endGiveaway = () => {
-    if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
-    countdownTimerRef.current = null;
-    if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-    claimTimerRef.current = null;
-    battleStartedAtRef.current = null;
-    testModeRef.current = false;
-    activeRoundIdRef.current = null;
-    setCombatants([]);
-    setPhase("idle");
-    setWinner(null);
-    setWinnerAllTimeWins(0);
-    setClaimStatus("none");
-    setClaimSeconds(60);
-    setRound((value) => value + 1);
-    setBattleId((value) => value + 1);
     setControlOpen(false);
     setDebugOpen(false);
-    addLog("Giveaway beendet");
-    postChat("Derzeit ist kein Giveaway aktiv.");
+    void arenaRequest("/end").catch((error) => setIntegrationMessage(String(error)));
   };
 
   const saveChannel = () => {
@@ -1547,7 +1284,7 @@ export default function Home() {
 
   const updateShipScale = (value: number) => {
     setShipScale(value);
-    window.localStorage.setItem("savox-ship-scale", String(value));
+    void updatePresentation({ shipScale: value });
   };
 
   const savePresentation = () => {
@@ -1556,9 +1293,12 @@ export default function Home() {
     const cleanTitle = arenaTitle.trim().slice(0, 28) || "VOID ARENA";
     setJoinCommand(cleanCommand);
     setArenaTitle(cleanTitle);
-    window.localStorage.setItem("savox-join-command", cleanCommand);
-    window.localStorage.setItem("savox-arena-title", cleanTitle);
-    addLog(`Darstellung gespeichert: ${cleanTitle}`);
+    void updatePresentation({ joinCommand: cleanCommand, arenaTitle: cleanTitle, shipScale });
+  };
+
+  const selectTheme = (nextTheme: ThemeId) => {
+    setThemeId(nextTheme);
+    void updatePresentation({ themeId: nextTheme });
   };
 
   const saveIntegrationSettings = async (
@@ -1646,17 +1386,6 @@ export default function Home() {
   };
 
   useEffect(() => {
-    incomingChatHandlerRef.current = (sender: string, message: string) => {
-      recordChat(`@${sender}: ${message}`);
-      if (phase === "winner") confirmClaim(sender);
-      if (handleChatCommand(sender, message)) return;
-      if (phase === "registration" && message.trim().toLocaleLowerCase() === joinCommand.toLocaleLowerCase()) {
-        registerParticipantName(sender);
-      }
-    };
-  });
-
-  useEffect(() => {
     arenaRestoreHandlerRef.current = (remote: ArenaStateMessage | null) => {
       if (!remote) return;
       setCombatants(remote.combatants.map((entry) => ({ ...entry })));
@@ -1675,33 +1404,10 @@ export default function Home() {
       setCruiserFireRate(remote.cruiserFireRate);
       soundOnRef.current = remote.soundOn;
       setSoundOn(remote.soundOn);
-      activeRoundIdRef.current = remote.activeRoundId;
-      battleStartedAtRef.current = remote.battleStartedAt;
-      testModeRef.current = remote.testMode;
-
-      if (overlayOnly) {
-        setPhase(remote.phase);
-        return;
-      }
-
-      if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
-      if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-      countdownTimerRef.current = null;
-      claimTimerRef.current = null;
-      const elapsedSeconds = remote.updatedAt > 0
-        ? Math.max(0, Math.floor((Date.now() - remote.updatedAt) / 1000))
-        : 0;
-      if (remote.phase === "countdown") {
-        const elapsedCountdownSteps = Math.floor(elapsedSeconds / 0.9);
-        runBattleCountdown(Math.max(0, remote.countdown - elapsedCountdownSteps), false);
-      } else {
-        setPhase(remote.phase);
-        if (remote.phase === "winner" && remote.claimStatus === "pending" && remote.winner) {
-          startClaimCountdown(remote.winner.name, Math.max(0, remote.claimSeconds - elapsedSeconds));
-        }
-      }
+      setThemeId(remote.themeId || "standard");
+      setPhase(remote.phase);
     };
-  });
+  }, []);
 
   useEffect(() => {
     let socket: WebSocket | null = null;
@@ -1720,7 +1426,9 @@ export default function Home() {
           return;
         }
         if (message.type === "chat.message") {
-          if (!overlayOnly) incomingChatHandlerRef.current(String(message.payload.sender || ""), String(message.payload.message || ""));
+          if (!overlayOnly) recordChat(`@${String(message.payload.sender || "")}: ${String(message.payload.message || "")}`);
+        } else if (message.type === "chat.outgoing") {
+          if (!overlayOnly) recordChat(String(message.payload.message || ""));
         } else if (message.type === "twitch.status") {
           setTwitchStatus(message.payload as unknown as TwitchStatus);
         } else if (message.type === "update.status") {
@@ -1733,19 +1441,23 @@ export default function Home() {
           setOverlayConnectionCount(Number(message.payload.count || 0));
         } else if (message.type === "arena.restore") {
           const restored = (message.payload.state || null) as ArenaStateMessage | null;
-          if (overlayOnly) {
-            arenaRestoreHandlerRef.current(restored);
-          } else if (!hasRestoredArenaRef.current) {
-            hasRestoredArenaRef.current = true;
-            arenaRestoreHandlerRef.current(restored);
-          } else if (arenaStateRef.current && socket?.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ type: "arena.state", payload: arenaStateRef.current }));
-          }
-          setArenaReady(true);
-        } else if (message.type === "arena.state" && overlayOnly) {
+          arenaRestoreHandlerRef.current(restored);
+        } else if (message.type === "arena.state") {
           const remote = message.payload as unknown as ArenaStateMessage;
-          if (remote.origin === clientId) return;
           arenaRestoreHandlerRef.current(remote);
+        } else if (message.type === "arena.battle_complete") {
+          const record = message.payload as unknown as BattleRecord;
+          setBattleHistory((current) => {
+            const next = [record, ...current.filter((entry) => entry.id !== record.id)].slice(0, 100);
+            window.localStorage.setItem("savox-battle-history", JSON.stringify(next));
+            return next;
+          });
+          if (!overlayOnly && !themesOnly) {
+            void fetch("/api/stats/winners")
+              .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
+              .then((payload: WinnerLeader[]) => setWinnerLeaders(payload))
+              .catch(() => undefined);
+          }
         } else if (message.type === "arena.sound" && overlayOnly) {
           const cue = String(message.payload.cue || "") as ArenaSoundCue;
           if (soundOnRef.current && ["toggle", "countdown", "battle", "destroyed", "winner", "claim"].includes(cue)) playArenaSound(cue);
@@ -1770,57 +1482,22 @@ export default function Home() {
       socket?.close();
       socketRef.current = null;
     };
-  }, [clientId, overlayOnly]);
-
-  useEffect(() => {
-    soundOnRef.current = soundOn;
-    const state: ArenaStateMessage = {
-      origin: clientId,
-      phase,
-      combatants,
-      battleId,
-      round,
-      countdown,
-      winner,
-      winnerAllTimeWins,
-      claimStatus,
-      claimSeconds,
-      logs,
-      arenaTitle,
-      joinCommand,
-      shipScale,
-      frigateFireRate,
-      cruiserFireRate,
-      soundOn,
-      updatedAt: Date.now(),
-      activeRoundId: activeRoundIdRef.current,
-      battleStartedAt: battleStartedAtRef.current,
-      testMode: testModeRef.current,
-    };
-    arenaStateRef.current = state;
-    if (!overlayOnly && arenaReady && socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: "arena.state", payload: state }));
-    }
-  }, [arenaReady, arenaTitle, battleId, claimSeconds, claimStatus, clientId, combatants, countdown, cruiserFireRate, frigateFireRate, joinCommand, logs, overlayOnly, phase, round, shipScale, soundOn, winner, winnerAllTimeWins]);
+  }, [clientId, overlayOnly, themesOnly]);
 
   const saveFireRates = () => {
     const frigateRate = clampFireRate(frigateFireRate, BALANCED_FIRE_RATES.frigate);
     const cruiserRate = clampFireRate(cruiserFireRate, BALANCED_FIRE_RATES.cruiser);
     setFrigateFireRate(frigateRate);
     setCruiserFireRate(cruiserRate);
-    window.localStorage.setItem("savox-frigate-fire-rate", String(frigateRate));
-    window.localStorage.setItem("savox-cruiser-fire-rate", String(cruiserRate));
     setSimulationResult(null);
-    addLog(`Zeitwerte gespeichert: ${frigateRate.toFixed(2)} s / ${cruiserRate.toFixed(2)} s`);
+    void updatePresentation({ frigateFireRate: frigateRate, cruiserFireRate: cruiserRate });
   };
 
   const applyBalancePreset = () => {
     setFrigateFireRate(BALANCED_FIRE_RATES.frigate);
     setCruiserFireRate(BALANCED_FIRE_RATES.cruiser);
-    window.localStorage.setItem("savox-frigate-fire-rate", String(BALANCED_FIRE_RATES.frigate));
-    window.localStorage.setItem("savox-cruiser-fire-rate", String(BALANCED_FIRE_RATES.cruiser));
     setSimulationResult(simulateBalanceBatch(500, 24, BALANCED_FIRE_RATES.frigate, BALANCED_FIRE_RATES.cruiser));
-    addLog("Balance-Startwert aktiviert: 1,55 s / 2,35 s");
+    void updatePresentation({ frigateFireRate: BALANCED_FIRE_RATES.frigate, cruiserFireRate: BALANCED_FIRE_RATES.cruiser });
   };
 
   const runSimulation = () => {
@@ -1830,49 +1507,6 @@ export default function Home() {
   const clearBattleHistory = () => {
     setBattleHistory([]);
     window.localStorage.removeItem("savox-battle-history");
-  };
-
-  const handleWinner = (ship: Combatant) => {
-    const durationSeconds = battleStartedAtRef.current === null ? 0 : (Date.now() - battleStartedAtRef.current) / 1000;
-    battleStartedAtRef.current = null;
-    const record: BattleRecord = {
-      id: activeRoundIdRef.current ?? `round-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      winnerName: ship.name,
-      winnerClass: ship.shipClass,
-      durationSeconds,
-      participants: combatants.length,
-      completedAt: new Date().toISOString(),
-      frigateFireRate,
-      cruiserFireRate,
-    };
-    setBattleHistory((current) => {
-      const next = [record, ...current].slice(0, 100);
-      window.localStorage.setItem("savox-battle-history", JSON.stringify(next));
-      return next;
-    });
-    setWinner(ship);
-    setWinnerAllTimeWins(0);
-    setPhase("winner");
-    setClaimStatus("pending");
-    setClaimSeconds(60);
-    setChatSender(ship.name);
-    addLog(`${ship.name} gewinnt Runde ${round}`);
-    postChat(`@${ship.name} gewinnt! Poste innerhalb von 60 Sekunden etwas im Chat, um den Gewinn zu claimen.`);
-    emitSoundCue("winner");
-    if (!testModeRef.current) {
-      void fetch("/api/stats/winner", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: ship.name, record_id: record.id }),
-      }).then(async (response) => {
-        if (!response.ok) throw new Error("Siegerstatistik konnte nicht gespeichert werden");
-        return response.json() as Promise<{ wins: number }>;
-      }).then((payload) => {
-        setWinnerAllTimeWins(payload.wins);
-        refreshWinnerLeaders();
-      }).catch(() => undefined);
-    }
-    startClaimCountdown(ship.name, 60);
   };
 
   const aliveCount = combatants.filter((entry) => entry.alive).length;
@@ -1890,9 +1524,10 @@ export default function Home() {
   const winnerNameFontSize = Math.max(27, 58 - Math.max(0, winnerNameLength - 12) * 2.35);
 
   return (
-    <main className={`broadcast-shell phase-${phase} ${overlayOnly ? "overlay-only" : "control-surface"}`}>
+    <main className={`broadcast-shell phase-${phase} theme-${themeId} ${overlayOnly ? "overlay-only" : themesOnly ? "theme-surface" : "control-surface"}`}>
       <div className="deep-space-backdrop" aria-hidden="true" />
-      <SpaceArena combatants={combatants} battleId={battleId} phase={phase} shipScale={shipScale} frigateFireRate={frigateFireRate} cruiserFireRate={cruiserFireRate} readOnly={overlayOnly} onSnapshot={setCombatants} onLog={addLog} onWinner={handleWinner} onSound={emitSoundCue} />
+      <SpaceArena combatants={combatants} battleId={battleId} phase={phase} shipScale={shipScale} frigateFireRate={frigateFireRate} cruiserFireRate={cruiserFireRate} readOnly onSnapshot={ignoreArenaEvent} onLog={ignoreArenaEvent} onWinner={ignoreArenaEvent} onSound={ignoreArenaEvent} />
+      <div className="event-theme-layer" aria-hidden="true"><i /><i /><i /><b /></div>
       <div className="nebula nebula-cyan" />
       <div className="nebula nebula-amber" />
       <div className="scanlines" />
@@ -1905,8 +1540,15 @@ export default function Home() {
         <div className="status-cluster">
           <div className={`status-pill status-${phase}`}><i /> {phaseLabel}</div>
           <button className="icon-button" type="button" onClick={toggleSound} aria-label="Sound umschalten" title={soundOn ? "Sounds aktiv – zum Ausschalten klicken" : "Sounds aus – für Testton und OBS-Sounds einschalten"}>{soundOn ? "◖))" : "◖×"}</button>
-          <button className={`debug-button ${debugOpen ? "active" : ""}`} type="button" onClick={() => { setControlOpen(false); setDebugOpen((value) => !value); }}>DEBUG</button>
-          <button className="control-button" type="button" onClick={() => { setDebugOpen(false); setControlOpen(true); }}>CONTROL</button>
+          {!overlayOnly && themesOnly ? (
+            <a className="control-button surface-link" href="/control">CONTROL</a>
+          ) : !overlayOnly ? (
+            <>
+              <a className="theme-button surface-link" href="/themes">THEMES</a>
+              <button className={`debug-button ${debugOpen ? "active" : ""}`} type="button" onClick={() => { setControlOpen(false); setDebugOpen((value) => !value); }}>DEBUG</button>
+              <button className="control-button" type="button" onClick={() => { setDebugOpen(false); setControlOpen(true); }}>CONTROL</button>
+            </>
+          ) : null}
         </div>
       </header>
 
@@ -1967,6 +1609,26 @@ export default function Home() {
         </div>
         <div className="countdown"><span>RUNDE</span><strong>{String(round).padStart(2, "0")}</strong></div>
       </section>
+
+      {themesOnly && (
+        <aside className="theme-panel glass-panel">
+          <div className="theme-panel-head">
+            <p className="panel-kicker">EVENT-DARSTELLUNG</p>
+            <h2>THEME CONTROL</h2>
+            <p>Wähle das Design für Control und OBS. Der Wechsel wird sofort serverweit gespeichert.</p>
+          </div>
+          <div className="theme-grid">
+            {EVENT_THEMES.map((theme) => (
+              <button className={`theme-card theme-card-${theme.id} ${themeId === theme.id ? "active" : ""}`} type="button" key={theme.id} onClick={() => selectTheme(theme.id)}>
+                <span className="theme-swatch"><i /><b>{theme.tag}</b></span>
+                <span className="theme-card-copy"><strong>{theme.name}</strong><small>{theme.description}</small></span>
+                <em>{themeId === theme.id ? "AKTIV" : "WÄHLEN"}</em>
+              </button>
+            ))}
+          </div>
+          <p className="theme-panel-note"><b>STANDARD BLEIBT STANDARD:</b> Das bisherige Layout wurde nicht verändert. Event-Themes legen nur eigene Licht-, Farb- und Partikeleffekte darüber.</p>
+        </aside>
+      )}
 
       <div className={`debug-scrim ${debugOpen ? "open" : ""}`} onClick={() => setDebugOpen(false)} />
       <aside className={`debug-panel glass-panel ${debugOpen ? "open" : ""}`} aria-hidden={!debugOpen}>

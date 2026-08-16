@@ -72,3 +72,32 @@ async def test_device_login_needs_only_client_id(tmp_path, monkeypatch):
 
     assert url == "https://www.twitch.tv/activate?public=true&device-code=ABCDEFGH"
     assert service.status.message.endswith("Code ABCDEFGH")
+
+
+@pytest.mark.asyncio
+async def test_twitch_chat_is_forwarded_to_the_python_game_handler(tmp_path):
+    received = []
+
+    async def handle_chat(sender, message):
+        received.append((sender, message))
+
+    service = TwitchService(
+        ConfigStore(tmp_path / "config.json"),
+        MemorySecrets(),
+        EventBus(),
+        chat_handler=handle_chat,
+    )
+    await service._handle_notification(
+        {
+            "payload": {
+                "subscription": {"type": "channel.chat.message"},
+                "event": {
+                    "chatter_user_name": "Pilot",
+                    "message": {"text": "!join"},
+                    "message_id": "message-1",
+                },
+            }
+        }
+    )
+
+    assert received == [("Pilot", "!join")]

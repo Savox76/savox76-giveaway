@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -48,6 +49,7 @@ class TwitchService:
     config: ConfigStore
     secrets_store: SecretStore
     events: EventBus
+    chat_handler: Callable[[str, str], Awaitable[None]] | None = None
     status: TwitchStatus = field(default_factory=TwitchStatus)
     _task: asyncio.Task[None] | None = None
     _device_task: asyncio.Task[None] | None = None
@@ -345,6 +347,8 @@ class TwitchService:
                 "chat.message",
                 {"sender": sender, "message": text, "message_id": event.get("message_id", "")},
             )
+            if self.chat_handler is not None:
+                await self.chat_handler(sender, text)
 
     async def send_chat(self, message: str) -> None:
         if not self.status.connected:

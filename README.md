@@ -38,6 +38,7 @@ entpackt sein.
 ## Lokale Adressen
 
 - Steuerung: `http://127.0.0.1:8766/control`
+- Theme-Steuerung: `http://127.0.0.1:8766/themes`
 - OBS-Browserquelle: `http://127.0.0.1:8766/overlay`
 - empfohlene OBS-Größe: 1920 × 1080
 
@@ -48,13 +49,36 @@ Geräte-Login ist unabhängig vom lokalen Port.
 
 ## Control, OBS und Sounds
 
-`/control` ist die Steuerung und überträgt Teilnehmer, Countdown, Kampf, Claim, Gewinner und
-Darstellungswerte live an `/overlay`. Die OBS-Browserquelle kann vor oder nach der Steuerung
-geöffnet werden und erhält den letzten Stand automatisch. Auch Testflotten werden übertragen.
-In der Control-Seite zeigt eine eigene Statuszeile, ob und wie viele OBS-Overlays verbunden sind.
+Der Python-Server ist ab Version 0.3.0 der unabhängige Spielleiter: Er verarbeitet den Twitch-
+Chat, Anmeldungen, Countdown, Schüsse, Treffer, Gewinner und die 60-Sekunden-Claim-Zeit. `/control`
+und `/overlay` zeigen denselben Serverzustand nur noch an. Deshalb läuft ein Giveaway auch weiter,
+wenn die Control-Seite in einem anderen Browsertab liegt, minimiert oder ganz geschlossen ist.
+Das Python-Terminal muss dafür geöffnet bleiben.
+
+Die OBS-Browserquelle kann vor oder nach der Steuerung geöffnet werden und erhält den letzten
+Stand automatisch. Auch Testflotten werden übertragen. In der Control-Seite zeigt eine eigene
+Statuszeile, ob und wie viele OBS-Overlays verbunden sind. Ist das Overlay in OBS gerade
+ausgeblendet, bleibt die Twitch-Anmeldung trotzdem geöffnet und der Kampf wird serverseitig
+weitergerechnet; beim erneuten Einblenden erscheint sofort der aktuelle Stand.
 
 Der letzte Giveaway-Zustand wird regelmäßig in `arena-state.json` gesichert. Nach einem Browser-
-oder Tool-Neustart werden Teilnehmer, Runde, HP, Countdown und Claim-Zeit wiederhergestellt.
+oder Tool-Neustart werden Teilnehmer, Runde, HP, Countdown, Claim-Zeit und das gewählte Theme
+wiederhergestellt.
+
+## Event-Themes
+
+Die separate Seite `/themes` ist über den Button **THEMES** erreichbar. Sie hält die normale
+Control-Seite übersichtlich und bietet fünf sofort umschaltbare Designs:
+
+- Standard – das bisherige Layout unverändert
+- Ostern
+- Weihnachten
+- Halloween
+- Kanaljubiläum
+
+Das gewählte Theme gilt sofort gemeinsam für Control und OBS und wird lokal gespeichert. Die
+Event-Varianten ändern nur Lichtstimmung, Akzentfarben und dezente Partikel; Arena, Texte und
+Bedienelemente bleiben an denselben Stellen.
 
 Der Sound-Schalter oben steuert dezente Signale für Countdown, Kampfbeginn, zerstörte Schiffe,
 Gewinner und Claim. Ein Klick auf den Schalter spielt in der Control-Seite einen kurzen Testton.
@@ -71,6 +95,7 @@ Folgende feste Statistikbefehle stehen im Twitch-Chat zur Verfügung:
 - `!wins` oder `!wins @Name` – Siege und Teilnahmen anzeigen
 - `!top3` – die drei erfolgreichsten Piloten anzeigen
 - `!giveaway` – aktuellen Giveaway-Status anzeigen
+- `!leave` – eigene Anmeldung vor Kampfbeginn zurücknehmen
 
 ## Automatische Updates
 

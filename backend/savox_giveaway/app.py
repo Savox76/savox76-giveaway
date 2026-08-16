@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import json
 import sys
-import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -22,6 +21,7 @@ from . import __version__
 from .arena_state import ArenaStateStore
 from .config import DEFAULT_SERVER_PORT, AppSettings, ConfigStore
 from .events import EventBus
+from .game import THEME_IDS, ArenaGame
 from .secrets import SecretStore
 from .stats import WinnerStatsStore
 from .twitch import TwitchService
@@ -92,6 +92,7 @@ class ArenaStatePayload(BaseModel):
     frigateFireRate: float = Field(ge=0.2, le=8)
     cruiserFireRate: float = Field(ge=0.2, le=8)
     soundOn: bool
+    themeId: Literal["standard", "easter", "christmas", "halloween", "anniversary"] = "standard"
     updatedAt: int = Field(default=0, ge=0)
     activeRoundId: str | None = Field(default=None, max_length=100)
     battleStartedAt: int | None = Field(default=None, ge=0)
@@ -108,6 +109,25 @@ class ClientHelloPayload(BaseModel):
     role: Literal["control", "overlay"]
 
 
+class ArenaJoinPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=25)
+
+
+class ArenaChatSimulationPayload(BaseModel):
+    sender: str = Field(min_length=1, max_length=25)
+    message: str = Field(min_length=1, max_length=500)
+
+
+class ArenaPresentationPayload(BaseModel):
+    arenaTitle: str | None = Field(default=None, max_length=28)
+    joinCommand: str | None = Field(default=None, max_length=20)
+    shipScale: float | None = Field(default=None, ge=0.45, le=1)
+    frigateFireRate: float | None = Field(default=None, ge=0.2, le=8)
+    cruiserFireRate: float | None = Field(default=None, ge=0.2, le=8)
+    soundOn: bool | None = None
+    themeId: str | None = Field(default=None, max_length=30)
+
+
 class ApplicationState:
     def __init__(self, config: ConfigStore | None = None, secret_store: SecretStore | None = None) -> None:
         self.config = config or ConfigStore()
@@ -118,12 +138,19 @@ class ApplicationState:
         self.arena_store = ArenaStateStore(self.config.path.with_name("arena-state.json"))
         stored_arena = self.arena_store.load()
         try:
-            self.arena_state = (
+            stored_arena = (
                 ArenaStatePayload.model_validate(stored_arena).model_dump() if stored_arena else None
             )
         except ValidationError:
-            self.arena_state = None
-        self.last_arena_save = 0.0
+            stored_arena = None
+        self.arena = ArenaGame(
+            self.arena_store,
+            self.stats,
+            self.events,
+            self.twitch.send_chat,
+            stored_arena,
+        )
+        self.twitch.chat_handler = self.arena.handle_chat
         self.overlay_connections: set[WebSocket] = set()
         self.latest_update: UpdateInfo | None = None
         self.update_task: asyncio.Task[None] | None = None
@@ -158,35 +185,20 @@ class ApplicationState:
                 await self.events.publish("update.error", {"message": str(exc)[:200]})
             await asyncio.sleep(6 * 60 * 60)
 
-    async def update_arena_state(self, state: dict[str, Any]) -> None:
-        previous = self.arena_state
-        self.arena_state = state
-        now = time.monotonic()
-        important_change = (
-            previous is None
-            or previous.get("phase") != state.get("phase")
-            or previous.get("claimStatus") != state.get("claimStatus")
-            or len(previous.get("combatants", [])) != len(state.get("combatants", []))
-        )
-        if important_change or now - self.last_arena_save >= 0.6:
-            await asyncio.to_thread(self.arena_store.save, state)
-            self.last_arena_save = now
-
-
 def create_app(state: ApplicationState | None = None) -> FastAPI:
     app_state = state or ApplicationState()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await app_state.twitch.start()
+        await app_state.arena.start()
         app_state.update_task = asyncio.create_task(app_state.update_watch(), name="github-update-watch")
         yield
         if app_state.update_task:
             app_state.update_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await app_state.update_task
-        if app_state.arena_state is not None:
-            await asyncio.to_thread(app_state.arena_store.save, app_state.arena_state)
+        await app_state.arena.stop()
         await app_state.twitch.stop()
 
     app = FastAPI(title="Savox76 Giveaway System", version=__version__, lifespan=lifespan)
@@ -195,7 +207,7 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Content-Type"],
     )
 
@@ -267,6 +279,68 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"sent": True}
 
+    @app.get("/api/arena/state")
+    async def arena_state() -> dict[str, Any]:
+        return app_state.arena.state
+
+    @app.post("/api/arena/start")
+    async def arena_start() -> dict[str, Any]:
+        return await app_state.arena.start_giveaway()
+
+    @app.post("/api/arena/test/{count}")
+    async def arena_test(count: int) -> dict[str, Any]:
+        try:
+            return await app_state.arena.load_test_fleet(count)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/arena/join")
+    async def arena_join(payload: ArenaJoinPayload) -> dict[str, Any]:
+        try:
+            return await app_state.arena.join(payload.name, announce=False)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/api/arena/participants/{participant_id}")
+    async def arena_remove_participant(participant_id: str) -> dict[str, Any]:
+        return await app_state.arena.remove_participant(participant_id)
+
+    @app.post("/api/arena/battle")
+    async def arena_battle() -> dict[str, Any]:
+        try:
+            return await app_state.arena.start_battle()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/arena/rematch")
+    async def arena_rematch() -> dict[str, Any]:
+        try:
+            return await app_state.arena.start_rematch()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/arena/end")
+    async def arena_end() -> dict[str, Any]:
+        return await app_state.arena.end_giveaway()
+
+    @app.post("/api/arena/chat")
+    async def arena_chat(payload: ArenaChatSimulationPayload) -> dict[str, Any]:
+        try:
+            return await app_state.arena.simulate_chat(payload.sender, payload.message)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.put("/api/arena/presentation")
+    async def arena_presentation(payload: ArenaPresentationPayload) -> dict[str, Any]:
+        values = payload.model_dump(exclude_none=True)
+        if theme_id := values.get("themeId"):
+            if theme_id not in THEME_IDS:
+                raise HTTPException(status_code=400, detail="Unbekanntes Event-Theme")
+        try:
+            return await app_state.arena.update_presentation(values)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.post("/api/stats/winner")
     async def record_winner(payload: WinnerRecordPayload) -> dict[str, Any]:
         try:
@@ -326,7 +400,7 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
                 },
             }
         )
-        await websocket.send_json({"type": "arena.restore", "payload": {"state": app_state.arena_state}})
+        await websocket.send_json({"type": "arena.restore", "payload": {"state": app_state.arena.state}})
         try:
             while True:
                 raw = await websocket.receive_text()
@@ -347,10 +421,6 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
                                     "count": len(app_state.overlay_connections),
                                 },
                             )
-                    elif event_type == "arena.state":
-                        state_payload = ArenaStatePayload.model_validate(payload).model_dump()
-                        await app_state.update_arena_state(state_payload)
-                        await app_state.events.publish("arena.state", state_payload)
                     elif event_type == "arena.sound":
                         sound_payload = ArenaSoundPayload.model_validate(payload).model_dump()
                         await app_state.events.publish("arena.sound", sound_payload)
@@ -382,6 +452,7 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
             return RedirectResponse("/control")
 
         @app.get("/control")
+        @app.get("/themes")
         @app.get("/overlay")
         async def surface() -> FileResponse:
             return FileResponse(frontend / "index.html")

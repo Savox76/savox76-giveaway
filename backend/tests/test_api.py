@@ -21,7 +21,7 @@ def test_local_surfaces_and_status(tmp_path):
 
     status = client.get("/api/status")
     assert status.status_code == 200
-    assert status.json()["version"] == "0.2.10"
+    assert status.json()["version"] == "0.3.0"
     assert status.json()["mode"] == "python"
     assert status.json()["twitch"]["connected"] is False
 
@@ -81,63 +81,55 @@ def test_winner_stats_endpoint_is_idempotent(tmp_path):
     assert client.get("/api/stats/winner", params={"name": "pilot"}).json()["participations"] == 1
 
 
-def test_arena_state_is_forwarded_to_overlay_clients(tmp_path):
+def test_python_arena_state_is_authoritative_and_restored(tmp_path):
     state = ApplicationState(ConfigStore(tmp_path / "config.json"), MemorySecrets())
     client = TestClient(create_app(state))
-    arena_state = {
-        "origin": "control-test",
-        "phase": "registration",
-        "combatants": [
-            {
-                "id": "pilot-1",
-                "name": "Pilot",
-                "shipClass": "frigate",
-                "hp": 100,
-                "maxHp": 100,
-                "alive": True,
-                "kills": 0,
-            }
-        ],
-        "battleId": 4,
-        "round": 2,
-        "countdown": 3,
-        "winner": None,
-        "winnerAllTimeWins": 0,
-        "claimStatus": "none",
-        "claimSeconds": 60,
-        "logs": [{"time": "12:34", "message": "Test geladen"}],
-        "arenaTitle": "VOID ARENA",
-        "joinCommand": "!join",
-        "shipScale": 0.65,
-        "frigateFireRate": 1.55,
-        "cruiserFireRate": 2.35,
-        "soundOn": True,
-        "updatedAt": 1_786_819_200_000,
-        "activeRoundId": None,
-        "battleStartedAt": None,
-        "testMode": False,
-    }
 
     with client.websocket_connect("/ws/events") as control:
         control.receive_json()
         control.receive_json()
         control.receive_json()
-        assert control.receive_json() == {"type": "arena.restore", "payload": {"state": None}}
-        control.send_json({"type": "arena.state", "payload": arena_state})
+        restored = control.receive_json()
+        assert restored["type"] == "arena.restore"
+        assert restored["payload"]["state"]["phase"] == "idle"
+        assert restored["payload"]["state"]["themeId"] == "standard"
+
+        started = client.post("/api/arena/start")
+        assert started.status_code == 200
+        assert started.json()["phase"] == "registration"
+        assert control.receive_json()["type"] == "arena.state"
+        assert control.receive_json()["type"] == "chat.outgoing"
+
+        joined = client.post("/api/arena/join", json={"name": "Pilot"})
+        assert joined.status_code == 200
+        assert joined.json()["combatants"][0]["name"] == "Pilot"
         forwarded = control.receive_json()
-        assert forwarded == {"type": "arena.state", "payload": arena_state}
+        assert forwarded["type"] == "arena.state"
+        assert forwarded["payload"]["origin"] == "python-server"
 
     with client.websocket_connect("/ws/events") as overlay:
         overlay.receive_json()
         overlay.receive_json()
         overlay.receive_json()
-        assert overlay.receive_json() == {
-            "type": "arena.restore",
-            "payload": {"state": arena_state},
-        }
+        restored = overlay.receive_json()
+        assert restored["type"] == "arena.restore"
+        assert restored["payload"]["state"]["combatants"][0]["name"] == "Pilot"
 
     restored = ApplicationState(ConfigStore(tmp_path / "config.json"), MemorySecrets())
-    assert restored.arena_state == arena_state
+    assert restored.arena.state["combatants"][0]["name"] == "Pilot"
+
+
+def test_theme_control_surface_and_theme_persistence(tmp_path):
+    state = ApplicationState(ConfigStore(tmp_path / "config.json"), MemorySecrets())
+    client = TestClient(create_app(state))
+
+    response = client.put("/api/arena/presentation", json={"themeId": "halloween"})
+
+    assert response.status_code == 200
+    assert response.json()["themeId"] == "halloween"
+    assert client.get("/themes").status_code == 200
+    restored = ApplicationState(ConfigStore(tmp_path / "config.json"), MemorySecrets())
+    assert restored.arena.state["themeId"] == "halloween"
 
 
 def test_overlay_connection_status_is_broadcast(tmp_path):

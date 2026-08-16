@@ -14,6 +14,7 @@ def main() -> None:
     base_url = f"http://127.0.0.1:{settings.server_port}"
     print("Savox76 Giveaway System")
     print(f"Steuerung: {base_url}/control")
+    print(f"Theme-Steuerung: {base_url}/themes")
     print(f"OBS-Overlay: {base_url}/overlay")
     print("Zum Beenden Strg+C drücken.\n", flush=True)
     if settings.open_browser_on_start:
