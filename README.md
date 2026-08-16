@@ -51,6 +51,10 @@ bei Twitch auf den gewählten Port angepasst werden.
 `/control` ist die Steuerung und überträgt Teilnehmer, Countdown, Kampf, Claim, Gewinner und
 Darstellungswerte live an `/overlay`. Die OBS-Browserquelle kann vor oder nach der Steuerung
 geöffnet werden und erhält den letzten Stand automatisch. Auch Testflotten werden übertragen.
+In der Control-Seite zeigt eine eigene Statuszeile, ob und wie viele OBS-Overlays verbunden sind.
+
+Der letzte Giveaway-Zustand wird regelmäßig in `arena-state.json` gesichert. Nach einem Browser-
+oder Tool-Neustart werden Teilnehmer, Runde, HP, Countdown und Claim-Zeit wiederhergestellt.
 
 Der Sound-Schalter oben steuert dezente Signale für Countdown, Kampfbeginn, zerstörte Schiffe,
 Gewinner und Claim. Ein Klick auf den Schalter spielt in der Control-Seite einen kurzen Testton.
@@ -59,7 +63,14 @@ Streaming-PC hörbar sein, in den erweiterten Audioeigenschaften **Monitor und A
 
 Reale Gewinner werden dauerhaft in `winner-stats.json` im lokalen Konfigurationsordner gezählt.
 Der Siegerdialog zeigt den aktuellen Wert als `ALLTIME-SIEG #…`. Automatische Testpiloten aus der
-Debug-Funktion verändern diese Statistik nicht.
+Debug-Funktion verändern diese Statistik nicht. Die Control-Seite zeigt zusätzlich die Alltime-
+Rangliste mit Siegen und gespielten Runden.
+
+Folgende feste Statistikbefehle stehen im Twitch-Chat zur Verfügung:
+
+- `!wins` oder `!wins @Name` – Siege und Teilnahmen anzeigen
+- `!top3` – die drei erfolgreichsten Piloten anzeigen
+- `!giveaway` – aktuellen Giveaway-Status anzeigen
 
 ## Automatische Updates
 
@@ -111,4 +122,4 @@ ist ohne vorherige schriftliche Genehmigung nicht erlaubt.
 
 Konfiguration und Twitch-Tokens werden nicht eingecheckt. Geheimnisse liegen im Schlüsselspeicher
 des Betriebssystems; Darstellungswerte, Kampfhistorie und Siegerstatistik bleiben lokal auf dem
-Streaming-PC.
+Streaming-PC. Das gilt ebenfalls für den automatisch gesicherten Stand einer aktiven Runde.

@@ -25,7 +25,11 @@ class WinnerStatsStore:
         with self._lock:
             data = self._load()
             key = clean_name.casefold()
-            pilot = data["pilots"].get(key, {"name": clean_name, "wins": 0, "last_win": ""})
+            pilot = data["pilots"].get(
+                key,
+                {"name": clean_name, "wins": 0, "participations": 0, "last_win": ""},
+            )
+            pilot.setdefault("participations", 0)
             if clean_record_id not in data["records"]:
                 pilot["wins"] = int(pilot.get("wins", 0)) + 1
                 pilot["last_win"] = datetime.now(UTC).isoformat()
@@ -36,6 +40,49 @@ class WinnerStatsStore:
             self._save(data)
             return dict(pilot)
 
+    def record_participants(self, names: list[str], round_id: str) -> list[dict[str, Any]]:
+        clean_round_id = round_id.strip()[:100]
+        clean_names: list[str] = []
+        seen_names: set[str] = set()
+        for name in names:
+            clean_name = name.strip().removeprefix("@")[:25]
+            if clean_name and clean_name.casefold() not in seen_names:
+                clean_names.append(clean_name)
+                seen_names.add(clean_name.casefold())
+        if not clean_round_id or not clean_names:
+            raise ValueError("Teilnehmer und Runden-ID dürfen nicht leer sein")
+
+        with self._lock:
+            data = self._load()
+            participation_records = data["participation_records"]
+            recorded = set(participation_records)
+            for clean_name in clean_names:
+                key = clean_name.casefold()
+                token = f"{clean_round_id}:{key}"
+                pilot = data["pilots"].get(
+                    key,
+                    {"name": clean_name, "wins": 0, "participations": 0, "last_win": ""},
+                )
+                if token not in recorded:
+                    pilot["participations"] = int(pilot.get("participations", 0)) + 1
+                    recorded.add(token)
+                    participation_records.append(token)
+                pilot["name"] = clean_name
+                data["pilots"][key] = pilot
+            data["participation_records"] = participation_records[-20_000:]
+            self._save(data)
+            return [dict(data["pilots"][name.casefold()]) for name in clean_names]
+
+    def lookup(self, name: str) -> dict[str, Any]:
+        clean_name = name.strip().removeprefix("@")[:25]
+        with self._lock:
+            pilot = self._load()["pilots"].get(clean_name.casefold())
+        if pilot is None:
+            return {"name": clean_name, "wins": 0, "participations": 0, "last_win": ""}
+        result = dict(pilot)
+        result.setdefault("participations", 0)
+        return result
+
     def leaders(self) -> list[dict[str, Any]]:
         with self._lock:
             pilots = [dict(entry) for entry in self._load()["pilots"].values()]
@@ -43,16 +90,23 @@ class WinnerStatsStore:
 
     def _load(self) -> dict[str, Any]:
         if not self.path.exists():
-            return {"version": 1, "pilots": {}, "records": []}
+            return {"version": 2, "pilots": {}, "records": [], "participation_records": []}
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError):
-            return {"version": 1, "pilots": {}, "records": []}
+            return {"version": 2, "pilots": {}, "records": [], "participation_records": []}
         if not isinstance(raw, dict) or not isinstance(raw.get("pilots"), dict):
-            return {"version": 1, "pilots": {}, "records": []}
+            return {"version": 2, "pilots": {}, "records": [], "participation_records": []}
         records = raw.get("records", [])
         raw["records"] = records if isinstance(records, list) else []
-        raw["version"] = 1
+        participation_records = raw.get("participation_records", [])
+        raw["participation_records"] = (
+            participation_records if isinstance(participation_records, list) else []
+        )
+        for pilot in raw["pilots"].values():
+            if isinstance(pilot, dict):
+                pilot.setdefault("participations", 0)
+        raw["version"] = 2
         return raw
 
     def _save(self, data: dict[str, Any]) -> None:

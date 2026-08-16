@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import sys
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -18,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from . import __version__
+from .arena_state import ArenaStateStore
 from .config import DEFAULT_SERVER_PORT, AppSettings, ConfigStore
 from .events import EventBus
 from .secrets import SecretStore
@@ -50,6 +52,11 @@ class ChatPayload(BaseModel):
 class WinnerRecordPayload(BaseModel):
     name: str = Field(min_length=1, max_length=25)
     record_id: str = Field(min_length=1, max_length=100)
+
+
+class ParticipantRecordPayload(BaseModel):
+    names: list[str] = Field(min_length=1, max_length=200)
+    round_id: str = Field(min_length=1, max_length=100)
 
 
 class ArenaCombatantPayload(BaseModel):
@@ -85,11 +92,20 @@ class ArenaStatePayload(BaseModel):
     frigateFireRate: float = Field(ge=0.2, le=8)
     cruiserFireRate: float = Field(ge=0.2, le=8)
     soundOn: bool
+    updatedAt: int = Field(default=0, ge=0)
+    activeRoundId: str | None = Field(default=None, max_length=100)
+    battleStartedAt: int | None = Field(default=None, ge=0)
+    testMode: bool = False
 
 
 class ArenaSoundPayload(BaseModel):
     origin: str = Field(min_length=1, max_length=100)
     cue: Literal["toggle", "countdown", "battle", "destroyed", "winner", "claim"]
+
+
+class ClientHelloPayload(BaseModel):
+    origin: str = Field(min_length=1, max_length=100)
+    role: Literal["control", "overlay"]
 
 
 class ApplicationState:
@@ -99,7 +115,16 @@ class ApplicationState:
         self.events = EventBus()
         self.twitch = TwitchService(self.config, self.secrets, self.events)
         self.stats = WinnerStatsStore(self.config.path.with_name("winner-stats.json"))
-        self.arena_state: dict[str, Any] | None = None
+        self.arena_store = ArenaStateStore(self.config.path.with_name("arena-state.json"))
+        stored_arena = self.arena_store.load()
+        try:
+            self.arena_state = (
+                ArenaStatePayload.model_validate(stored_arena).model_dump() if stored_arena else None
+            )
+        except ValidationError:
+            self.arena_state = None
+        self.last_arena_save = 0.0
+        self.overlay_connections: set[WebSocket] = set()
         self.latest_update: UpdateInfo | None = None
         self.update_task: asyncio.Task[None] | None = None
 
@@ -133,6 +158,20 @@ class ApplicationState:
                 await self.events.publish("update.error", {"message": str(exc)[:200]})
             await asyncio.sleep(6 * 60 * 60)
 
+    async def update_arena_state(self, state: dict[str, Any]) -> None:
+        previous = self.arena_state
+        self.arena_state = state
+        now = time.monotonic()
+        important_change = (
+            previous is None
+            or previous.get("phase") != state.get("phase")
+            or previous.get("claimStatus") != state.get("claimStatus")
+            or len(previous.get("combatants", [])) != len(state.get("combatants", []))
+        )
+        if important_change or now - self.last_arena_save >= 0.6:
+            await asyncio.to_thread(self.arena_store.save, state)
+            self.last_arena_save = now
+
 
 def create_app(state: ApplicationState | None = None) -> FastAPI:
     app_state = state or ApplicationState()
@@ -146,6 +185,8 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
             app_state.update_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await app_state.update_task
+        if app_state.arena_state is not None:
+            await asyncio.to_thread(app_state.arena_store.save, app_state.arena_state)
         await app_state.twitch.stop()
 
     app = FastAPI(title="Savox76 Giveaway System", version=__version__, lifespan=lifespan)
@@ -230,6 +271,17 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.get("/api/stats/winner")
+    async def winner_lookup(name: str) -> dict[str, Any]:
+        return app_state.stats.lookup(name)
+
+    @app.post("/api/stats/participants")
+    async def record_participants(payload: ParticipantRecordPayload) -> list[dict[str, Any]]:
+        try:
+            return app_state.stats.record_participants(payload.names, payload.round_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/stats/winners")
     async def winner_leaders() -> list[dict[str, Any]]:
         return app_state.stats.leaders()
@@ -262,8 +314,16 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         await websocket.send_json(
             {"type": "update.status", "payload": update_to_dict(app_state.latest_update)}
         )
-        if app_state.arena_state is not None:
-            await websocket.send_json({"type": "arena.state", "payload": app_state.arena_state})
+        await websocket.send_json(
+            {
+                "type": "overlay.status",
+                "payload": {
+                    "connected": bool(app_state.overlay_connections),
+                    "count": len(app_state.overlay_connections),
+                },
+            }
+        )
+        await websocket.send_json({"type": "arena.restore", "payload": {"state": app_state.arena_state}})
         try:
             while True:
                 raw = await websocket.receive_text()
@@ -273,9 +333,20 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
                     message = json.loads(raw)
                     event_type = message.get("type")
                     payload = message.get("payload")
-                    if event_type == "arena.state":
+                    if event_type == "client.hello":
+                        hello = ClientHelloPayload.model_validate(payload)
+                        if hello.role == "overlay":
+                            app_state.overlay_connections.add(websocket)
+                            await app_state.events.publish(
+                                "overlay.status",
+                                {
+                                    "connected": True,
+                                    "count": len(app_state.overlay_connections),
+                                },
+                            )
+                    elif event_type == "arena.state":
                         state_payload = ArenaStatePayload.model_validate(payload).model_dump()
-                        app_state.arena_state = state_payload
+                        await app_state.update_arena_state(state_payload)
                         await app_state.events.publish("arena.state", state_payload)
                     elif event_type == "arena.sound":
                         sound_payload = ArenaSoundPayload.model_validate(payload).model_dump()
@@ -285,7 +356,17 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         except WebSocketDisconnect:
             pass
         finally:
+            was_overlay = websocket in app_state.overlay_connections
+            app_state.overlay_connections.discard(websocket)
             await app_state.events.disconnect(websocket)
+            if was_overlay:
+                await app_state.events.publish(
+                    "overlay.status",
+                    {
+                        "connected": bool(app_state.overlay_connections),
+                        "count": len(app_state.overlay_connections),
+                    },
+                )
 
     frontend = frontend_directory()
     if frontend.exists():

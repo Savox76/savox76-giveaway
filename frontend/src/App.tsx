@@ -86,6 +86,17 @@ type ArenaStateMessage = {
   frigateFireRate: number;
   cruiserFireRate: number;
   soundOn: boolean;
+  updatedAt: number;
+  activeRoundId: string | null;
+  battleStartedAt: number | null;
+  testMode: boolean;
+};
+
+type WinnerLeader = {
+  name: string;
+  wins: number;
+  participations: number;
+  last_win: string;
 };
 
 const EMPTY_TWITCH_STATUS: TwitchStatus = {
@@ -1132,12 +1143,19 @@ export default function Home() {
   const [twitchSecretInput, setTwitchSecretInput] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.2.7");
+  const [appVersion, setAppVersion] = useState("0.2.8");
+  const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
+  const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
+  const [arenaReady, setArenaReady] = useState(false);
   const [clientId] = useState(() => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `client-${Date.now()}-${Math.random()}`);
   const socketRef = useRef<WebSocket | null>(null);
   const soundOnRef = useRef(soundOn);
   const arenaStateRef = useRef<ArenaStateMessage | null>(null);
   const testModeRef = useRef(false);
+  const activeRoundIdRef = useRef<string | null>(null);
+  const hasRestoredArenaRef = useRef(false);
+  const arenaRestoreHandlerRef = useRef<(state: ArenaStateMessage | null) => void>(() => undefined);
+  const chatCommandCooldownsRef = useRef(new Map<string, number>());
   const countdownTimerRef = useRef<number | null>(null);
   const claimTimerRef = useRef<number | null>(null);
   const battleStartedAtRef = useRef<number | null>(null);
@@ -1177,6 +1195,18 @@ export default function Home() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (overlayOnly) return;
+    let active = true;
+    fetch("/api/stats/winners")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
+      .then((payload: WinnerLeader[]) => {
+        if (active) setWinnerLeaders(payload);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [overlayOnly]);
 
   useEffect(() => {
     let active = true;
@@ -1220,6 +1250,79 @@ export default function Home() {
     }
   };
 
+  const refreshWinnerLeaders = () => {
+    if (overlayOnly) return;
+    void fetch("/api/stats/winners")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
+      .then((payload: WinnerLeader[]) => setWinnerLeaders(payload))
+      .catch(() => undefined);
+  };
+
+  const handleChatCommand = (sender: string, rawMessage: string) => {
+    const [rawCommand, requestedName] = rawMessage.trim().split(/\s+/, 2);
+    const command = rawCommand.toLocaleLowerCase();
+    if (!["!wins", "!top3", "!giveaway"].includes(command)) return false;
+    const cooldownKey = command === "!wins" ? `${command}:${sender.toLocaleLowerCase()}` : command;
+    const now = Date.now();
+    if (now - (chatCommandCooldownsRef.current.get(cooldownKey) ?? 0) < 5000) return true;
+    if (chatCommandCooldownsRef.current.size > 500) chatCommandCooldownsRef.current.clear();
+    chatCommandCooldownsRef.current.set(cooldownKey, now);
+    if (command === "!wins") {
+      const target = (requestedName || sender).replace(/^@/, "").slice(0, 25);
+      void fetch(`/api/stats/winner?name=${encodeURIComponent(target)}`)
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
+        .then((pilot: WinnerLeader) => {
+          postChat(`@${sender}: ${pilot.name || target} hat ${pilot.wins} ${pilot.wins === 1 ? "Sieg" : "Siege"} aus ${pilot.participations} ${pilot.participations === 1 ? "Teilnahme" : "Teilnahmen"}.`);
+        })
+        .catch(() => postChat(`@${sender}, die Siegerstatistik ist gerade nicht erreichbar.`));
+      return true;
+    }
+    if (command === "!top3") {
+      void fetch("/api/stats/winners")
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
+        .then((leaders: WinnerLeader[]) => {
+          setWinnerLeaders(leaders);
+          const top = leaders.filter((pilot) => pilot.wins > 0).slice(0, 3);
+          postChat(top.length
+            ? `Alltime Top ${top.length}: ${top.map((pilot, index) => `${index + 1}. ${pilot.name} (${pilot.wins})`).join(" · ")}`
+            : "Noch wurden keine Alltime-Siege aufgezeichnet.");
+        })
+        .catch(() => postChat("Die Siegerstatistik ist gerade nicht erreichbar."));
+      return true;
+    }
+    if (command === "!giveaway") {
+      const alive = combatants.filter((entry) => entry.alive).length;
+      const status = phase === "idle"
+        ? "Derzeit ist kein Giveaway aktiv."
+        : phase === "registration"
+          ? `Giveaway offen: ${combatants.length} Piloten angemeldet. Mit ${joinCommand} teilnehmen.`
+          : phase === "countdown"
+            ? `Die Anmeldung ist geschlossen. Das Gefecht startet in ${countdown}.`
+            : phase === "battle"
+              ? `Das Gefecht läuft: ${alive} von ${combatants.length} Piloten verbleiben.`
+              : claimStatus === "pending"
+                ? `Gewinner ist @${winner?.name ?? "unbekannt"}. Der Claim läuft noch ${claimSeconds} Sekunden.`
+                : claimStatus === "claimed"
+                  ? `@${winner?.name ?? "Der Gewinner"} hat den Gewinn bestätigt.`
+                  : "Der Gewinn wurde nicht rechtzeitig geclaimt. Ein Rematch ist möglich.";
+      postChat(status);
+      return true;
+    }
+    return false;
+  };
+
+  const recordRoundParticipants = (names: string[], roundId: string) => {
+    if (testModeRef.current) return;
+    void fetch("/api/stats/participants", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names, round_id: roundId }),
+    }).then((response) => {
+      if (!response.ok) throw new Error("Teilnahmen konnten nicht gespeichert werden");
+      refreshWinnerLeaders();
+    }).catch(() => undefined);
+  };
+
   const emitSoundCue = (cue: ArenaSoundCue) => {
     if (overlayOnly || !soundOnRef.current || socketRef.current?.readyState !== WebSocket.OPEN) return;
     socketRef.current.send(JSON.stringify({ type: "arena.sound", payload: { origin: clientId, cue } }));
@@ -1255,6 +1358,32 @@ export default function Home() {
     setJoinName("");
   };
 
+  const expireClaim = (winnerName: string) => {
+    setClaimStatus("expired");
+    addLog(`${winnerName} hat den Gewinn nicht geclaimt`);
+    postChat(`@${winnerName} hat nicht rechtzeitig geantwortet. Eine neue Runde kann ohne Neuanmeldung gestartet werden.`);
+  };
+
+  const startClaimCountdown = (winnerName: string, initialSeconds = 60) => {
+    if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
+    claimTimerRef.current = null;
+    let remaining = Math.max(0, Math.min(60, initialSeconds));
+    setClaimSeconds(remaining);
+    if (remaining <= 0) {
+      expireClaim(winnerName);
+      return;
+    }
+    claimTimerRef.current = window.setInterval(() => {
+      remaining -= 1;
+      setClaimSeconds(Math.max(0, remaining));
+      if (remaining <= 0) {
+        if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
+        claimTimerRef.current = null;
+        expireClaim(winnerName);
+      }
+    }, 1000);
+  };
+
   const confirmClaim = (sender: string) => {
     if (phase !== "winner" || claimStatus !== "pending" || !winner || sender.toLocaleLowerCase() !== winner.name.toLocaleLowerCase()) return false;
     if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
@@ -1272,8 +1401,12 @@ export default function Home() {
     const message = incomingChatText.trim().slice(0, 140);
     if (!sender || !message) return;
     recordChat(`@${sender}: ${message}`);
-    if (phase === "registration" && message.toLocaleLowerCase() === joinCommand.toLocaleLowerCase()) registerParticipantName(sender);
     if (phase === "winner") confirmClaim(sender);
+    if (handleChatCommand(sender, message)) {
+      setIncomingChatText("");
+      return;
+    }
+    if (phase === "registration" && message.toLocaleLowerCase() === joinCommand.toLocaleLowerCase()) registerParticipantName(sender);
     setIncomingChatText("");
   };
 
@@ -1284,6 +1417,8 @@ export default function Home() {
 
   const startGiveaway = () => {
     testModeRef.current = false;
+    activeRoundIdRef.current = null;
+    battleStartedAtRef.current = null;
     if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
     claimTimerRef.current = null;
     setCombatants([]);
@@ -1302,6 +1437,8 @@ export default function Home() {
     if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
     claimTimerRef.current = null;
     testModeRef.current = true;
+    activeRoundIdRef.current = null;
+    battleStartedAtRef.current = null;
     setCombatants(balanceFleet(createTestNames(count)));
     setWinner(null);
     setWinnerAllTimeWins(0);
@@ -1312,30 +1449,44 @@ export default function Home() {
     postChat(`Test-Giveaway gestartet: ${count} Teilnehmer sind angemeldet.`);
   };
 
-  const beginBattleCountdown = () => {
-    setCountdown(3);
+  const launchBattle = (withSound = true) => {
+    battleStartedAtRef.current = Date.now();
+    setPhase("battle");
+    setBattleId((value) => value + 1);
+    addLog("Kampf freigegeben");
+    if (withSound) emitSoundCue("battle");
+  };
+
+  const runBattleCountdown = (initialCountdown = 3, withSound = true) => {
+    let remaining = Math.max(0, Math.min(3, initialCountdown));
+    setCountdown(remaining);
     setPhase("countdown");
-    emitSoundCue("countdown");
-    let remaining = 3;
+    if (withSound && remaining > 0) emitSoundCue("countdown");
     if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
+    if (remaining <= 0) {
+      countdownTimerRef.current = null;
+      launchBattle(withSound);
+      return;
+    }
     countdownTimerRef.current = window.setInterval(() => {
       remaining -= 1;
-      setCountdown(remaining);
-      if (remaining > 0) emitSoundCue("countdown");
+      setCountdown(Math.max(0, remaining));
+      if (withSound && remaining > 0) emitSoundCue("countdown");
       if (remaining <= 0) {
         if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
         countdownTimerRef.current = null;
-        battleStartedAtRef.current = performance.now();
-        setPhase("battle");
-        setBattleId((value) => value + 1);
-        addLog("Kampf freigegeben");
-        emitSoundCue("battle");
+        launchBattle(withSound);
       }
     }, 900);
   };
 
+  const beginBattleCountdown = () => runBattleCountdown(3, true);
+
   const startBattle = () => {
     if (combatants.length < 2 || phase !== "registration") return;
+    const roundId = `round-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    activeRoundIdRef.current = roundId;
+    recordRoundParticipants(combatants.map((entry) => entry.name), roundId);
     setCombatants(balanceFleet(combatants.map((entry) => entry.name)));
     setWinner(null);
     setWinnerAllTimeWins(0);
@@ -1350,6 +1501,9 @@ export default function Home() {
     if (combatants.length < 2 || phase !== "winner" || claimStatus !== "expired") return;
     if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
     claimTimerRef.current = null;
+    const roundId = `round-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    activeRoundIdRef.current = roundId;
+    recordRoundParticipants(combatants.map((entry) => entry.name), roundId);
     setCombatants(balanceFleet(combatants.map((entry) => entry.name)));
     setWinner(null);
     setWinnerAllTimeWins(0);
@@ -1369,6 +1523,7 @@ export default function Home() {
     claimTimerRef.current = null;
     battleStartedAtRef.current = null;
     testModeRef.current = false;
+    activeRoundIdRef.current = null;
     setCombatants([]);
     setPhase("idle");
     setWinner(null);
@@ -1466,10 +1621,58 @@ export default function Home() {
   useEffect(() => {
     incomingChatHandlerRef.current = (sender: string, message: string) => {
       recordChat(`@${sender}: ${message}`);
+      if (phase === "winner") confirmClaim(sender);
+      if (handleChatCommand(sender, message)) return;
       if (phase === "registration" && message.trim().toLocaleLowerCase() === joinCommand.toLocaleLowerCase()) {
         registerParticipantName(sender);
       }
-      if (phase === "winner") confirmClaim(sender);
+    };
+  });
+
+  useEffect(() => {
+    arenaRestoreHandlerRef.current = (remote: ArenaStateMessage | null) => {
+      if (!remote) return;
+      setCombatants(remote.combatants.map((entry) => ({ ...entry })));
+      setBattleId(remote.battleId);
+      setRound(remote.round);
+      setCountdown(remote.countdown);
+      setWinner(remote.winner ? { ...remote.winner } : null);
+      setWinnerAllTimeWins(remote.winnerAllTimeWins);
+      setClaimStatus(remote.claimStatus);
+      setClaimSeconds(remote.claimSeconds);
+      setLogs(remote.logs.map((entry) => ({ ...entry })));
+      setArenaTitle(remote.arenaTitle);
+      setJoinCommand(remote.joinCommand);
+      setShipScale(remote.shipScale);
+      setFrigateFireRate(remote.frigateFireRate);
+      setCruiserFireRate(remote.cruiserFireRate);
+      soundOnRef.current = remote.soundOn;
+      setSoundOn(remote.soundOn);
+      activeRoundIdRef.current = remote.activeRoundId;
+      battleStartedAtRef.current = remote.battleStartedAt;
+      testModeRef.current = remote.testMode;
+
+      if (overlayOnly) {
+        setPhase(remote.phase);
+        return;
+      }
+
+      if (countdownTimerRef.current !== null) window.clearInterval(countdownTimerRef.current);
+      if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
+      countdownTimerRef.current = null;
+      claimTimerRef.current = null;
+      const elapsedSeconds = remote.updatedAt > 0
+        ? Math.max(0, Math.floor((Date.now() - remote.updatedAt) / 1000))
+        : 0;
+      if (remote.phase === "countdown") {
+        const elapsedCountdownSteps = Math.floor(elapsedSeconds / 0.9);
+        runBattleCountdown(Math.max(0, remote.countdown - elapsedCountdownSteps), false);
+      } else {
+        setPhase(remote.phase);
+        if (remote.phase === "winner" && remote.claimStatus === "pending" && remote.winner) {
+          startClaimCountdown(remote.winner.name, Math.max(0, remote.claimSeconds - elapsedSeconds));
+        }
+      }
     };
   });
 
@@ -1483,7 +1686,12 @@ export default function Home() {
       socket = new WebSocket(`${protocol}://${window.location.host}/ws/events`);
       socketRef.current = socket;
       socket.onmessage = (event) => {
-        const message = JSON.parse(event.data) as { type: string; payload: Record<string, unknown> };
+        let message: { type: string; payload: Record<string, unknown> };
+        try {
+          message = JSON.parse(event.data) as { type: string; payload: Record<string, unknown> };
+        } catch {
+          return;
+        }
         if (message.type === "chat.message") {
           if (!overlayOnly) incomingChatHandlerRef.current(String(message.payload.sender || ""), String(message.payload.message || ""));
         } else if (message.type === "twitch.status") {
@@ -1494,36 +1702,30 @@ export default function Home() {
           setIntegrationMessage(`Version ${String(message.payload.version || "")} wird automatisch installiert …`);
         } else if (message.type === "update.error") {
           setIntegrationMessage(String(message.payload.message || "Updateprüfung fehlgeschlagen"));
+        } else if (message.type === "overlay.status") {
+          setOverlayConnectionCount(Number(message.payload.count || 0));
+        } else if (message.type === "arena.restore") {
+          const restored = (message.payload.state || null) as ArenaStateMessage | null;
+          if (overlayOnly) {
+            arenaRestoreHandlerRef.current(restored);
+          } else if (!hasRestoredArenaRef.current) {
+            hasRestoredArenaRef.current = true;
+            arenaRestoreHandlerRef.current(restored);
+          } else if (arenaStateRef.current && socket?.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "arena.state", payload: arenaStateRef.current }));
+          }
+          setArenaReady(true);
         } else if (message.type === "arena.state" && overlayOnly) {
           const remote = message.payload as unknown as ArenaStateMessage;
           if (remote.origin === clientId) return;
-          setPhase(remote.phase);
-          setCombatants(remote.combatants.map((entry) => ({ ...entry })));
-          setBattleId(remote.battleId);
-          setRound(remote.round);
-          setCountdown(remote.countdown);
-          setWinner(remote.winner ? { ...remote.winner } : null);
-          setWinnerAllTimeWins(remote.winnerAllTimeWins);
-          setClaimStatus(remote.claimStatus);
-          setClaimSeconds(remote.claimSeconds);
-          setLogs(remote.logs.map((entry) => ({ ...entry })));
-          setArenaTitle(remote.arenaTitle);
-          setJoinCommand(remote.joinCommand);
-          setShipScale(remote.shipScale);
-          setFrigateFireRate(remote.frigateFireRate);
-          setCruiserFireRate(remote.cruiserFireRate);
-          soundOnRef.current = remote.soundOn;
-          setSoundOn(remote.soundOn);
+          arenaRestoreHandlerRef.current(remote);
         } else if (message.type === "arena.sound" && overlayOnly) {
           const cue = String(message.payload.cue || "") as ArenaSoundCue;
           if (soundOnRef.current && ["toggle", "countdown", "battle", "destroyed", "winner", "claim"].includes(cue)) playArenaSound(cue);
         }
       };
       socket.onopen = () => {
-        socket?.send("ready");
-        if (!overlayOnly && arenaStateRef.current) {
-          socket?.send(JSON.stringify({ type: "arena.state", payload: arenaStateRef.current }));
-        }
+        socket?.send(JSON.stringify({ type: "client.hello", payload: { origin: clientId, role: overlayOnly ? "overlay" : "control" } }));
       };
       socket.onclose = () => {
         if (socketRef.current === socket) socketRef.current = null;
@@ -1563,12 +1765,16 @@ export default function Home() {
       frigateFireRate,
       cruiserFireRate,
       soundOn,
+      updatedAt: Date.now(),
+      activeRoundId: activeRoundIdRef.current,
+      battleStartedAt: battleStartedAtRef.current,
+      testMode: testModeRef.current,
     };
     arenaStateRef.current = state;
-    if (!overlayOnly && socketRef.current?.readyState === WebSocket.OPEN) {
+    if (!overlayOnly && arenaReady && socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: "arena.state", payload: state }));
     }
-  }, [arenaTitle, battleId, claimSeconds, claimStatus, clientId, combatants, countdown, cruiserFireRate, frigateFireRate, joinCommand, logs, overlayOnly, phase, round, shipScale, soundOn, winner, winnerAllTimeWins]);
+  }, [arenaReady, arenaTitle, battleId, claimSeconds, claimStatus, clientId, combatants, countdown, cruiserFireRate, frigateFireRate, joinCommand, logs, overlayOnly, phase, round, shipScale, soundOn, winner, winnerAllTimeWins]);
 
   const saveFireRates = () => {
     const frigateRate = clampFireRate(frigateFireRate, BALANCED_FIRE_RATES.frigate);
@@ -1600,10 +1806,10 @@ export default function Home() {
   };
 
   const handleWinner = (ship: Combatant) => {
-    const durationSeconds = battleStartedAtRef.current === null ? 0 : (performance.now() - battleStartedAtRef.current) / 1000;
+    const durationSeconds = battleStartedAtRef.current === null ? 0 : (Date.now() - battleStartedAtRef.current) / 1000;
     battleStartedAtRef.current = null;
     const record: BattleRecord = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      id: activeRoundIdRef.current ?? `round-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       winnerName: ship.name,
       winnerClass: ship.shipClass,
       durationSeconds,
@@ -1634,21 +1840,12 @@ export default function Home() {
       }).then(async (response) => {
         if (!response.ok) throw new Error("Siegerstatistik konnte nicht gespeichert werden");
         return response.json() as Promise<{ wins: number }>;
-      }).then((payload) => setWinnerAllTimeWins(payload.wins)).catch(() => undefined);
+      }).then((payload) => {
+        setWinnerAllTimeWins(payload.wins);
+        refreshWinnerLeaders();
+      }).catch(() => undefined);
     }
-    if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-    let remaining = 60;
-    claimTimerRef.current = window.setInterval(() => {
-      remaining -= 1;
-      setClaimSeconds(remaining);
-      if (remaining <= 0) {
-        if (claimTimerRef.current !== null) window.clearInterval(claimTimerRef.current);
-        claimTimerRef.current = null;
-        setClaimStatus("expired");
-        addLog(`${ship.name} hat den Gewinn nicht geclaimt`);
-        postChat(`@${ship.name} hat nicht rechtzeitig geantwortet. Eine neue Runde kann ohne Neuanmeldung gestartet werden.`);
-      }
-    }, 1000);
+    startClaimCountdown(ship.name, 60);
   };
 
   const aliveCount = combatants.filter((entry) => entry.alive).length;
@@ -1848,6 +2045,7 @@ export default function Home() {
             <label><span>CLIENT-SECRET</span><input type="password" value={twitchSecretInput} onChange={(event) => setTwitchSecretInput(event.target.value)} placeholder={backendSettings.twitch_client_secret_set ? "Gespeichert – leer lassen zum Behalten" : "Noch nicht gespeichert"} /></label>
           </div>
           <div className={`connection-note ${twitchStatus.connected ? "connected" : ""}`}><i /> {twitchStatus.connected ? "TWITCH LIVE VERBUNDEN" : "TWITCH NICHT VERBUNDEN"} <span>{twitchStatus.message}{twitchStatus.login ? ` · Anmeldung: ${twitchStatus.login}` : ""}</span></div>
+          <div className={`connection-note overlay-connection ${overlayConnectionCount > 0 ? "connected" : ""}`}><i /> {overlayConnectionCount > 0 ? "OBS-OVERLAY VERBUNDEN" : "OBS-OVERLAY NICHT VERBUNDEN"}<span>{overlayConnectionCount > 0 ? `${overlayConnectionCount} aktive Overlay-Verbindung${overlayConnectionCount === 1 ? "" : "en"}` : "OBS-Browserquelle öffnen oder Quelle aktualisieren."}</span></div>
           <div className="integration-actions"><button type="button" onClick={saveIntegrationSettings}>ZUGANGSDATEN LOKAL SPEICHERN</button><button type="button" onClick={connectTwitch} disabled={!backendSettings.twitch_client_id || (!backendSettings.twitch_client_secret_set && !twitchSecretInput)}>MIT TWITCH ANMELDEN</button></div>
           <label className="field-label command-label" htmlFor="join-command">FREIER JOIN-BEFEHL</label>
           <div className="command-field"><input id="join-command" value={joinCommand} onChange={(event) => setJoinCommand(event.target.value)} placeholder="!join" /><button type="button" onClick={savePresentation}>SPEICHERN</button></div>
@@ -1862,6 +2060,22 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="control-section alltime-section">
+          <div className="section-title"><span>03</span><div><b>ALLTIME-RANGLISTE</b><small>Reale Siege und Teilnahmen</small></div></div>
+          <div className="alltime-list">
+            {winnerLeaders.length === 0 && <p className="alltime-empty">Noch keine realen Giveaway-Ergebnisse gespeichert.</p>}
+            {winnerLeaders.slice(0, 10).map((pilot, index) => (
+              <div className="alltime-row" key={pilot.name.toLocaleLowerCase()}>
+                <strong>{String(index + 1).padStart(2, "0")}</strong>
+                <div><b>{pilot.name}</b><small>{pilot.last_win ? `Letzter Sieg ${new Date(pilot.last_win).toLocaleDateString("de-DE")}` : "Noch kein Sieg"}</small></div>
+                <span><b>{pilot.wins}</b><small>SIEGE</small></span>
+                <span><b>{pilot.participations}</b><small>RUNDEN</small></span>
+              </div>
+            ))}
+          </div>
+          <p className="test-note">Chatbefehle: !wins · !wins @Name · !top3 · !giveaway</p>
+        </section>
+
         <section className="control-section compact-stats">
           <div><span className="class-dot frigate" /><b>FRIGATTE</b><small>100 HP · 8–12 DMG · {frigateFireRate.toFixed(2).replace(".", ",")} s</small></div>
           <div><span className="class-dot cruiser" /><b>CRUISER</b><small>180 HP · 25–32 DMG · {cruiserFireRate.toFixed(2).replace(".", ",")} s</small></div>
@@ -1869,7 +2083,7 @@ export default function Home() {
         </section>
 
         <section className="control-section visual-settings">
-          <div className="section-title"><span>03</span><div><b>DARSTELLUNG</b><small>OBS-Ansicht der Flotte</small></div></div>
+          <div className="section-title"><span>04</span><div><b>DARSTELLUNG</b><small>OBS-Ansicht der Flotte</small></div></div>
           <label className="field-label" htmlFor="arena-title">ARENA-NAME</label>
           <div className="command-field title-field"><input id="arena-title" value={arenaTitle} onChange={(event) => setArenaTitle(event.target.value)} maxLength={28} /><button type="button" onClick={savePresentation}>SPEICHERN</button></div>
           <div className="range-head"><label htmlFor="ship-size">SCHIFFSGRÖSSE</label><output>{Math.round(shipScale * 100)} %</output></div>
@@ -1878,7 +2092,7 @@ export default function Home() {
         </section>
 
         <section className="control-section update-settings">
-          <div className="section-title"><span>04</span><div><b>GITHUB & UPDATES</b><small>Quellcode, Releases und automatische Aktualisierung</small></div></div>
+          <div className="section-title"><span>05</span><div><b>GITHUB & UPDATES</b><small>Quellcode, Releases und automatische Aktualisierung</small></div></div>
           <div className="integration-grid">
             <label><span>GITHUB-BENUTZER</span><input value={backendSettings.github_owner} onChange={(event) => setBackendSettings((current) => ({ ...current, github_owner: event.target.value }))} /></label>
             <label><span>REPOSITORY</span><input value={backendSettings.github_repo} onChange={(event) => setBackendSettings((current) => ({ ...current, github_repo: event.target.value }))} /></label>

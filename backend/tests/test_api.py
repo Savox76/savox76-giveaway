@@ -20,7 +20,7 @@ def test_local_surfaces_and_status(tmp_path):
 
     status = client.get("/api/status")
     assert status.status_code == 200
-    assert status.json()["version"] == "0.2.7"
+    assert status.json()["version"] == "0.2.8"
     assert status.json()["mode"] == "python"
     assert status.json()["twitch"]["connected"] is False
 
@@ -58,6 +58,12 @@ def test_winner_stats_endpoint_is_idempotent(tmp_path):
     assert first.json()["wins"] == 1
     assert duplicate.json()["wins"] == 1
     assert client.get("/api/stats/winners").json()[0]["name"] == "Pilot"
+    participants = client.post(
+        "/api/stats/participants",
+        json={"names": ["Pilot", "Wingman"], "round_id": "round-1"},
+    )
+    assert participants.status_code == 200
+    assert client.get("/api/stats/winner", params={"name": "pilot"}).json()["participations"] == 1
 
 
 def test_arena_state_is_forwarded_to_overlay_clients(tmp_path):
@@ -91,11 +97,17 @@ def test_arena_state_is_forwarded_to_overlay_clients(tmp_path):
         "frigateFireRate": 1.55,
         "cruiserFireRate": 2.35,
         "soundOn": True,
+        "updatedAt": 1_786_819_200_000,
+        "activeRoundId": None,
+        "battleStartedAt": None,
+        "testMode": False,
     }
 
     with client.websocket_connect("/ws/events") as control:
         control.receive_json()
         control.receive_json()
+        control.receive_json()
+        assert control.receive_json() == {"type": "arena.restore", "payload": {"state": None}}
         control.send_json({"type": "arena.state", "payload": arena_state})
         forwarded = control.receive_json()
         assert forwarded == {"type": "arena.state", "payload": arena_state}
@@ -103,4 +115,32 @@ def test_arena_state_is_forwarded_to_overlay_clients(tmp_path):
     with client.websocket_connect("/ws/events") as overlay:
         overlay.receive_json()
         overlay.receive_json()
-        assert overlay.receive_json() == {"type": "arena.state", "payload": arena_state}
+        overlay.receive_json()
+        assert overlay.receive_json() == {
+            "type": "arena.restore",
+            "payload": {"state": arena_state},
+        }
+
+    restored = ApplicationState(ConfigStore(tmp_path / "config.json"), MemorySecrets())
+    assert restored.arena_state == arena_state
+
+
+def test_overlay_connection_status_is_broadcast(tmp_path):
+    state = ApplicationState(ConfigStore(tmp_path / "config.json"), MemorySecrets())
+    client = TestClient(create_app(state))
+
+    with client.websocket_connect("/ws/events") as control:
+        for _ in range(4):
+            control.receive_json()
+        control.send_json({"type": "client.hello", "payload": {"origin": "control", "role": "control"}})
+        with client.websocket_connect("/ws/events") as overlay:
+            for _ in range(4):
+                overlay.receive_json()
+            overlay.send_json({"type": "client.hello", "payload": {"origin": "overlay", "role": "overlay"}})
+            connected = control.receive_json()
+            assert connected == {"type": "overlay.status", "payload": {"connected": True, "count": 1}}
+        disconnected = control.receive_json()
+        assert disconnected == {
+            "type": "overlay.status",
+            "payload": {"connected": False, "count": 0},
+        }
