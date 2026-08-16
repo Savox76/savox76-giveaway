@@ -545,6 +545,7 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         @app.get("/control")
         @app.get("/themes")
         @app.get("/overlay")
+        @app.get("/status")
         async def surface() -> FileResponse:
             return FileResponse(frontend / "index.html")
 

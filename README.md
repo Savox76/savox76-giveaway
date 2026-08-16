@@ -47,6 +47,8 @@ entpackt sein. Die installierte Version steht zusätzlich oben links in der Cont
 - optionale direkte Theme-Ansicht: `http://127.0.0.1:8766/themes`
 - OBS-Browserquelle: `http://127.0.0.1:8766/overlay`
 - empfohlene OBS-Größe: 1920 × 1080
+- kompakter OBS-Status: `http://127.0.0.1:8766/status`
+- empfohlene Status-Größe: 520 × 140
 
 Der Server lauscht ausschließlich auf `127.0.0.1` und ist nicht öffentlich oder im Heimnetz
 erreichbar. Der Port lässt sich unter **System & Updates** ändern. Nach dem Speichern muss das
@@ -66,6 +68,11 @@ Stand automatisch. Auch Testflotten werden übertragen. In der Control-Seite zei
 Statuszeile, ob und wie viele OBS-Overlays verbunden sind. Ist das Overlay in OBS gerade
 ausgeblendet, bleibt die Twitch-Anmeldung trotzdem geöffnet und der Kampf wird serverseitig
 weitergerechnet; beim erneuten Einblenden erscheint sofort der aktuelle Stand.
+
+Die zusätzliche Browserquelle `/status` ist für eine Ecke des normalen Streamlayouts gedacht.
+Sie besitzt einen transparenten Außenbereich und zeigt kompakt, ob das Giveaway aktiv oder
+inaktiv ist, sowie die aktuelle Teilnehmerzahl. Sie aktualisiert sich direkt über den
+serverseitigen Zustand, lädt keine 3D-Arena und bleibt dadurch besonders ressourcenschonend.
 
 Oben im Control-Fenster zeigt eine zusätzliche Twitch-Ampel den tatsächlichen Betriebszustand:
 Rot bedeutet keine Chatverbindung, Orange einen verbundenen Twitch-Chat bei offline geschaltetem

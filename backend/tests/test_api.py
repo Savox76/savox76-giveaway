@@ -21,17 +21,19 @@ def test_local_surfaces_and_status(tmp_path):
 
     status = client.get("/api/status")
     assert status.status_code == 200
-    assert status.json()["version"] == "0.3.4"
+    assert status.json()["version"] == "0.3.5"
     assert status.json()["mode"] == "python"
     assert status.json()["twitch"]["connected"] is False
     assert status.json()["error_report"]["available"] is False
 
     control = client.get("/control")
     overlay = client.get("/overlay")
+    status_overlay = client.get("/status")
     favicon_svg = client.get("/favicon.svg")
     favicon_ico = client.get("/favicon.ico")
     assert control.status_code == 200
     assert overlay.status_code == 200
+    assert status_overlay.status_code == 200
     assert favicon_svg.status_code == 200
     assert favicon_ico.status_code == 200
     assert favicon_svg.headers["content-type"].startswith("image/svg+xml")

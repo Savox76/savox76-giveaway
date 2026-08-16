@@ -1101,6 +1101,7 @@ function formatClock(date: Date) {
 export default function Home() {
   const overlayOnly = window.location.pathname === "/overlay";
   const themesOnly = window.location.pathname === "/themes";
+  const statusOnly = window.location.pathname === "/status";
   const [combatants, setCombatants] = useState<Combatant[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [battleId, setBattleId] = useState(0);
@@ -1112,7 +1113,7 @@ export default function Home() {
   const [claimSeconds, setClaimSeconds] = useState(60);
   const [soundOn, setSoundOn] = useState(true);
   const [themeId, setThemeId] = useState<ThemeId>("standard");
-  const [controlOpen, setControlOpen] = useState(!overlayOnly && !themesOnly);
+  const [controlOpen, setControlOpen] = useState(!overlayOnly && !themesOnly && !statusOnly);
   const [themeOpen, setThemeOpen] = useState(themesOnly);
   const [debugOpen, setDebugOpen] = useState(false);
   const [joinName, setJoinName] = useState("");
@@ -1134,7 +1135,8 @@ export default function Home() {
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
   const [errorReport, setErrorReport] = useState<ErrorReportStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.3.4");
+  const [appVersion, setAppVersion] = useState("0.3.5");
+  const [serverConnected, setServerConnected] = useState(false);
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
   const [clientId] = useState(() => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `client-${Date.now()}-${Math.random()}`);
@@ -1147,6 +1149,16 @@ export default function Home() {
   const [chatMessages, setChatMessages] = useState<{ time: string; message: string }[]>([
     { time: "SYS", message: "Derzeit ist kein Giveaway aktiv." },
   ]);
+
+  useEffect(() => {
+    if (!statusOnly) return;
+    document.documentElement.classList.add("status-overlay-page");
+    document.body.classList.add("status-overlay-page");
+    return () => {
+      document.documentElement.classList.remove("status-overlay-page");
+      document.body.classList.remove("status-overlay-page");
+    };
+  }, [statusOnly]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1166,7 +1178,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (overlayOnly || themesOnly) return;
+    if (overlayOnly || themesOnly || statusOnly) return;
     let active = true;
     fetch("/api/stats/winners")
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
@@ -1175,7 +1187,7 @@ export default function Home() {
       })
       .catch(() => undefined);
     return () => { active = false; };
-  }, [overlayOnly, themesOnly]);
+  }, [overlayOnly, statusOnly, themesOnly]);
 
   useEffect(() => {
     let active = true;
@@ -1483,9 +1495,9 @@ export default function Home() {
           return;
         }
         if (message.type === "chat.message") {
-          if (!overlayOnly) recordChat(`@${String(message.payload.sender || "")}: ${String(message.payload.message || "")}`);
+          if (!overlayOnly && !statusOnly) recordChat(`@${String(message.payload.sender || "")}: ${String(message.payload.message || "")}`);
         } else if (message.type === "chat.outgoing") {
-          if (!overlayOnly) recordChat(String(message.payload.message || ""));
+          if (!overlayOnly && !statusOnly) recordChat(String(message.payload.message || ""));
         } else if (message.type === "twitch.status") {
           setTwitchStatus(message.payload as unknown as TwitchStatus);
         } else if (message.type === "update.status") {
@@ -1512,7 +1524,7 @@ export default function Home() {
             window.localStorage.setItem("savox-battle-history", JSON.stringify(next));
             return next;
           });
-          if (!overlayOnly && !themesOnly) {
+          if (!overlayOnly && !statusOnly && !themesOnly) {
             void fetch("/api/stats/winners")
               .then((response) => response.ok ? response.json() : Promise.reject(new Error("Statistik nicht erreichbar")))
               .then((payload: WinnerLeader[]) => setWinnerLeaders(payload))
@@ -1524,9 +1536,11 @@ export default function Home() {
         }
       };
       socket.onopen = () => {
-        socket?.send(JSON.stringify({ type: "client.hello", payload: { origin: clientId, role: overlayOnly ? "overlay" : "control" } }));
+        setServerConnected(true);
+        socket?.send(JSON.stringify({ type: "client.hello", payload: { origin: clientId, role: overlayOnly || statusOnly ? "overlay" : "control" } }));
       };
       socket.onclose = () => {
+        setServerConnected(false);
         if (socketRef.current === socket) socketRef.current = null;
         if (!stopped) reconnectTimer = window.setTimeout(connect, 2500);
       };
@@ -1542,7 +1556,7 @@ export default function Home() {
       socket?.close();
       socketRef.current = null;
     };
-  }, [clientId, overlayOnly, themesOnly]);
+  }, [clientId, overlayOnly, statusOnly, themesOnly]);
 
   const saveFireRates = () => {
     const frigateRate = clampFireRate(frigateFireRate, BALANCED_FIRE_RATES.frigate);
@@ -1585,6 +1599,39 @@ export default function Home() {
   const winnerNameLength = winner ? Array.from(winner.name).length : 0;
   const winnerCardWidth = Math.min(1040, 600 + Math.max(0, winnerNameLength - 10) * 32);
   const winnerNameFontSize = Math.max(27, 58 - Math.max(0, winnerNameLength - 12) * 2.35);
+  const statusActive = serverConnected && phase !== "idle";
+  const statusDetail = !serverConnected
+    ? "SERVER GETRENNT"
+    : phase === "registration"
+      ? "ANMELDUNG OFFEN"
+      : phase === "countdown"
+        ? "STARTSEQUENZ"
+        : phase === "battle"
+          ? "GEFECHT LÄUFT"
+          : phase === "winner"
+            ? "GEWINNER ERMITTELT"
+            : "BEREIT FÜR DIE NÄCHSTE RUNDE";
+
+  if (statusOnly) {
+    return (
+      <main className={`status-widget-shell theme-${themeId}`} aria-live="polite">
+        <section className={`status-widget ${statusActive ? "is-active" : "is-inactive"}`}>
+          <div className="status-widget-brand" aria-hidden="true"><span>S</span></div>
+          <div className="status-widget-copy">
+            <p>SAVOX76 // GIVEAWAY</p>
+            <strong><i />GIVEAWAY {statusActive ? "AKTIV" : "INAKTIV"}</strong>
+            <small>{statusDetail}</small>
+          </div>
+          <div className="status-widget-members">
+            <strong>{String(combatants.length).padStart(2, "0")}</strong>
+            <span>TEILNEHMER</span>
+          </div>
+          <i className="status-widget-corner corner-top" aria-hidden="true" />
+          <i className="status-widget-corner corner-bottom" aria-hidden="true" />
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className={`broadcast-shell phase-${phase} theme-${themeId} ${overlayOnly ? "overlay-only" : themesOnly ? "theme-surface" : "control-surface"}`}>

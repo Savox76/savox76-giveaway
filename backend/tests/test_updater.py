@@ -29,7 +29,7 @@ def test_release_asset_is_universal() -> None:
 
 
 def test_update_source_is_fixed_to_official_repository() -> None:
-    updater = GitHubUpdater(current_version="0.3.4")
+    updater = GitHubUpdater(current_version="0.3.5")
 
     assert updater.owner == "Savox76"
     assert updater.repo == "savox76-giveaway"

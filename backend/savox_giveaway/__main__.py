@@ -89,6 +89,7 @@ def main() -> None:
     print(f"Steuerung: {base_url}/control")
     print(f"Theme-Steuerung: {base_url}/themes")
     print(f"OBS-Overlay: {base_url}/overlay")
+    print(f"OBS-Status: {base_url}/status")
     print("Zum Beenden Strg+C drücken.\n", flush=True)
     if settings.open_browser_on_start and startup_status in {"current", "manual"}:
         threading.Thread(
