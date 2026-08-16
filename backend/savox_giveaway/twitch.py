@@ -3,11 +3,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import secrets
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 import websockets
@@ -16,7 +15,7 @@ from .config import ConfigStore
 from .events import EventBus
 from .secrets import SecretStore
 
-TWITCH_AUTHORIZE_URL = "https://id.twitch.tv/oauth2/authorize"
+TWITCH_DEVICE_URL = "https://id.twitch.tv/oauth2/device"
 TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 TWITCH_VALIDATE_URL = "https://id.twitch.tv/oauth2/validate"
 TWITCH_API_URL = "https://api.twitch.tv/helix"
@@ -50,8 +49,8 @@ class TwitchService:
     secrets_store: SecretStore
     events: EventBus
     status: TwitchStatus = field(default_factory=TwitchStatus)
-    _oauth_state: str = ""
     _task: asyncio.Task[None] | None = None
+    _device_task: asyncio.Task[None] | None = None
     _stop: asyncio.Event = field(default_factory=asyncio.Event)
     _seen_messages: deque[str] = field(default_factory=lambda: deque(maxlen=1000))
     _user_id: str = ""
@@ -62,9 +61,8 @@ class TwitchService:
 
     def refresh_configuration_status(self) -> None:
         settings = self.config.load()
-        has_secret = bool(self.secrets_store.get("twitch_client_secret"))
         has_token = bool(self.secrets_store.get("twitch_access_token"))
-        self.status.configured = bool(settings.twitch_client_id and has_secret and settings.channel_login)
+        self.status.configured = bool(settings.twitch_client_id and settings.channel_login)
         self.status.authenticated = has_token
         self.status.channel = settings.channel_login
         if not self.status.configured:
@@ -72,46 +70,115 @@ class TwitchService:
         elif not self.status.authenticated:
             self.status.message = "Twitch-Anmeldung erforderlich"
 
-    def authorization_url(self) -> str:
+    async def start_device_authorization(self) -> str:
         settings = self.config.load()
         if not settings.twitch_client_id:
             raise RuntimeError("Twitch Client-ID fehlt.")
-        if not self.secrets_store.get("twitch_client_secret"):
-            raise RuntimeError("Twitch Client-Secret fehlt.")
-        self._oauth_state = secrets.token_urlsafe(32)
-        query = urlencode(
-            {
-                "response_type": "code",
-                "client_id": settings.twitch_client_id,
-                "redirect_uri": settings.twitch_redirect_uri,
-                "scope": " ".join(TWITCH_SCOPES),
-                "state": self._oauth_state,
-                "force_verify": "true",
-            }
+        await self._cancel_device_authorization()
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                TWITCH_DEVICE_URL,
+                data={"client_id": settings.twitch_client_id, "scopes": " ".join(TWITCH_SCOPES)},
+            )
+        if response.is_error:
+            raise RuntimeError(f"Twitch-Geräteanmeldung fehlgeschlagen: {self._response_error(response)}")
+        payload = response.json()
+        device_code = str(payload.get("device_code", ""))
+        user_code = str(payload.get("user_code", ""))
+        verification_uri = str(payload.get("verification_uri", ""))
+        if not device_code or not verification_uri:
+            raise RuntimeError("Twitch hat keine gültige Geräteanmeldung zurückgegeben.")
+        expires_in = max(30, int(payload.get("expires_in", 1800)))
+        interval = max(1, int(payload.get("interval", 5)))
+        verification_uri = self._verification_url(verification_uri, user_code)
+        self.status.authenticated = False
+        self.status.connected = False
+        self.status.message = f"Twitch-Freigabe im Browser bestätigen · Code {user_code}"
+        await self._publish_status()
+        self._device_task = asyncio.create_task(
+            self._poll_device_authorization(device_code, expires_in, interval),
+            name="twitch-device-login",
         )
-        return f"{TWITCH_AUTHORIZE_URL}?{query}"
+        return verification_uri
 
-    async def finish_authorization(self, code: str, state: str) -> None:
-        if not self._oauth_state or not secrets.compare_digest(state, self._oauth_state):
-            raise RuntimeError("Die Twitch-Anmeldung wurde wegen eines ungültigen Status abgebrochen.")
-        self._oauth_state = ""
+    async def _poll_device_authorization(self, device_code: str, expires_in: int, interval: int) -> None:
+        current_task = asyncio.current_task()
         settings = self.config.load()
-        client_secret = self.secrets_store.get("twitch_client_secret")
         data = {
             "client_id": settings.twitch_client_id,
-            "client_secret": client_secret,
-            "code": code,
-            "grant_type": "authorization_code",
-            "redirect_uri": settings.twitch_redirect_uri,
+            "device_code": device_code,
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            "scopes": " ".join(TWITCH_SCOPES),
         }
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(TWITCH_TOKEN_URL, data=data)
-            response.raise_for_status()
+        if client_secret := self.secrets_store.get("twitch_client_secret"):
+            data["client_secret"] = client_secret
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + expires_in
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                while loop.time() < deadline:
+                    await asyncio.sleep(interval)
+                    response = await client.post(TWITCH_TOKEN_URL, data=data)
+                    if response.is_success:
+                        payload = response.json()
+                        self.secrets_store.set("twitch_access_token", str(payload["access_token"]))
+                        self.secrets_store.set("twitch_refresh_token", str(payload.get("refresh_token", "")))
+                        self.refresh_configuration_status()
+                        self.status.message = "Twitch-Freigabe erfolgreich · Chat wird verbunden"
+                        await self._publish_status()
+                        if self._device_task is current_task:
+                            self._device_task = None
+                        await self.restart()
+                        return
+                    reason = self._response_error(response).lower()
+                    if "authorization_pending" in reason:
+                        continue
+                    if "slow_down" in reason:
+                        interval += 5
+                        continue
+                    if "access_denied" in reason:
+                        raise RuntimeError("Twitch-Freigabe wurde abgelehnt.")
+                    if "expired" in reason or "invalid device code" in reason:
+                        raise RuntimeError("Twitch-Anmeldung ist abgelaufen. Bitte erneut verbinden.")
+                    raise RuntimeError(f"Twitch-Anmeldung fehlgeschlagen: {self._response_error(response)}")
+            raise RuntimeError("Twitch-Anmeldung ist abgelaufen. Bitte erneut verbinden.")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.status.authenticated = False
+            self.status.connected = False
+            self.status.message = str(exc)[:160]
+            await self._publish_status()
+        finally:
+            if self._device_task is current_task:
+                self._device_task = None
+
+    async def _cancel_device_authorization(self) -> None:
+        task = self._device_task
+        if task and task is not asyncio.current_task():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        if self._device_task is task:
+            self._device_task = None
+
+    @staticmethod
+    def _verification_url(url: str, user_code: str) -> str:
+        if not user_code:
+            return url
+        parts = urlsplit(url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query.setdefault("public", "true")
+        query.setdefault("device-code", user_code)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+    @staticmethod
+    def _response_error(response: httpx.Response) -> str:
+        with contextlib.suppress(ValueError, TypeError):
             payload = response.json()
-        self.secrets_store.set("twitch_access_token", payload["access_token"])
-        self.secrets_store.set("twitch_refresh_token", payload.get("refresh_token", ""))
-        self.refresh_configuration_status()
-        await self.restart()
+            if isinstance(payload, dict):
+                return str(payload.get("message") or payload.get("error") or response.reason_phrase)
+        return response.reason_phrase or f"HTTP {response.status_code}"
 
     async def start(self) -> None:
         self.refresh_configuration_status()
@@ -125,6 +192,7 @@ class TwitchService:
 
     async def stop(self) -> None:
         self._stop.set()
+        await self._cancel_device_authorization()
         if self._task:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -185,8 +253,9 @@ class TwitchService:
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
             "client_id": settings.twitch_client_id,
-            "client_secret": self.secrets_store.get("twitch_client_secret"),
         }
+        if client_secret := self.secrets_store.get("twitch_client_secret"):
+            data["client_secret"] = client_secret
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(TWITCH_TOKEN_URL, data=data)
             response.raise_for_status()

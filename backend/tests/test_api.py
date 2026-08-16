@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from savox_giveaway.app import ApplicationState, create_app
 from savox_giveaway.config import ConfigStore
+from savox_giveaway.twitch import TwitchService
 
 
 class MemorySecrets:
@@ -20,7 +21,7 @@ def test_local_surfaces_and_status(tmp_path):
 
     status = client.get("/api/status")
     assert status.status_code == 200
-    assert status.json()["version"] == "0.2.8"
+    assert status.json()["version"] == "0.2.9"
     assert status.json()["mode"] == "python"
     assert status.json()["twitch"]["connected"] is False
 
@@ -46,6 +47,20 @@ def test_server_port_can_be_saved(tmp_path):
     assert response.status_code == 200
     assert response.json()["server_port"] == 9010
     assert response.json()["twitch_redirect_uri"] == "http://127.0.0.1:9010/api/twitch/callback"
+
+
+def test_twitch_login_uses_device_authorization(tmp_path, monkeypatch):
+    state = ApplicationState(ConfigStore(tmp_path / "config.json"), MemorySecrets())
+    client = TestClient(create_app(state))
+
+    async def fake_device_authorization(self):
+        return "https://www.twitch.tv/activate?public=true&device-code=ABCDEFGH"
+
+    monkeypatch.setattr(TwitchService, "start_device_authorization", fake_device_authorization)
+    response = client.get("/api/twitch/login", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"].endswith("device-code=ABCDEFGH")
 
 
 def test_winner_stats_endpoint_is_idempotent(tmp_path):

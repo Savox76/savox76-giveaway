@@ -1140,10 +1140,10 @@ export default function Home() {
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
   const [twitchStatus, setTwitchStatus] = useState<TwitchStatus>(EMPTY_TWITCH_STATUS);
   const [backendSettings, setBackendSettings] = useState<BackendSettings>(DEFAULT_BACKEND_SETTINGS);
-  const [twitchSecretInput, setTwitchSecretInput] = useState("");
+  const [twitchMessage, setTwitchMessage] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.2.8");
+  const [appVersion, setAppVersion] = useState("0.2.9");
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
   const [arenaReady, setArenaReady] = useState(false);
@@ -1561,8 +1561,12 @@ export default function Home() {
     addLog(`Darstellung gespeichert: ${cleanTitle}`);
   };
 
-  const saveIntegrationSettings = async () => {
-    setIntegrationMessage("Einstellungen werden gespeichert …");
+  const saveIntegrationSettings = async (
+    target: "integration" | "twitch" = "integration",
+    showSuccess = true,
+  ): Promise<BackendSettings | null> => {
+    const setMessage = target === "twitch" ? setTwitchMessage : setIntegrationMessage;
+    setMessage("Einstellungen werden gespeichert …");
     try {
       const response = await fetch("/api/settings", {
         method: "PUT",
@@ -1570,7 +1574,7 @@ export default function Home() {
         body: JSON.stringify({
           channel_login: channel,
           twitch_client_id: backendSettings.twitch_client_id,
-          twitch_client_secret: twitchSecretInput || null,
+          twitch_client_secret: null,
           server_port: backendSettings.server_port,
           github_owner: backendSettings.github_owner,
           github_repo: backendSettings.github_repo,
@@ -1580,17 +1584,40 @@ export default function Home() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || "Speichern fehlgeschlagen");
-      setBackendSettings(payload as BackendSettings);
-      setTwitchSecretInput("");
-      setIntegrationMessage("Sicher lokal gespeichert. Eine Portänderung wird nach dem Neustart aktiv.");
+      const savedSettings = payload as BackendSettings;
+      setBackendSettings(savedSettings);
+      if (showSuccess) {
+        setMessage(target === "twitch" ? "Twitch-Einstellungen lokal gespeichert." : "Sicher lokal gespeichert. Eine Portänderung wird nach dem Neustart aktiv.");
+      }
       saveChannel();
+      return savedSettings;
     } catch (error) {
-      setIntegrationMessage(error instanceof Error ? error.message : "Speichern fehlgeschlagen");
+      setMessage(error instanceof Error ? error.message : "Speichern fehlgeschlagen");
+      return null;
     }
   };
 
-  const connectTwitch = () => {
-    window.open("/api/twitch/login", "savox76-twitch", "width=720,height=820");
+  const connectTwitch = async () => {
+    if (!backendSettings.twitch_client_id.trim()) {
+      setTwitchMessage("Bitte zuerst deine Twitch Client-ID eintragen. Ein Client-Secret ist nicht erforderlich.");
+      document.getElementById("twitch-client-id")?.focus();
+      return;
+    }
+    const authWindow = window.open("", "savox76-twitch", "width=720,height=820");
+    if (!authWindow) {
+      setTwitchMessage("Das Twitch-Fenster wurde vom Browser blockiert. Bitte Pop-ups für 127.0.0.1 erlauben.");
+      return;
+    }
+    authWindow.document.title = "Savox76 · Twitch verbinden";
+    authWindow.document.body.style.cssText = "background:#030812;color:#d7f7ff;font:16px system-ui;padding:40px";
+    authWindow.document.body.textContent = "Twitch-Verbindung wird vorbereitet …";
+    const saved = await saveIntegrationSettings("twitch", false);
+    if (!saved) {
+      authWindow.close();
+      return;
+    }
+    setTwitchMessage("Twitch wurde geöffnet. Bitte dort den Zugriff bestätigen; das Tool verbindet den Chat danach automatisch.");
+    authWindow.location.replace("/api/twitch/login");
   };
 
   const checkForUpdates = async () => {
@@ -2038,15 +2065,17 @@ export default function Home() {
           <div className="section-title"><span>02</span><div><b>TWITCH</b><small>EventSub-Chatverbindung über den lokalen Python-Server</small></div></div>
           <label className="field-label" htmlFor="channel">KANALNAME</label>
           <div className="channel-field">
-            <span>#</span><input id="channel" value={channel} onChange={(event) => setChannel(event.target.value)} /><button type="button" onClick={saveIntegrationSettings}>SPEICHERN</button>
+            <span>#</span><input id="channel" value={channel} onChange={(event) => setChannel(event.target.value)} /><button type="button" onClick={() => void saveIntegrationSettings("twitch")}>SPEICHERN</button>
           </div>
-          <div className="integration-grid twitch-credentials">
-            <label><span>TWITCH CLIENT-ID</span><input value={backendSettings.twitch_client_id} onChange={(event) => setBackendSettings((current) => ({ ...current, twitch_client_id: event.target.value }))} placeholder="Aus der Twitch Developer Console" /></label>
-            <label><span>CLIENT-SECRET</span><input type="password" value={twitchSecretInput} onChange={(event) => setTwitchSecretInput(event.target.value)} placeholder={backendSettings.twitch_client_secret_set ? "Gespeichert – leer lassen zum Behalten" : "Noch nicht gespeichert"} /></label>
+          <div className="twitch-device-setup">
+            <label htmlFor="twitch-client-id"><span>TWITCH CLIENT-ID</span><input id="twitch-client-id" value={backendSettings.twitch_client_id} onChange={(event) => setBackendSettings((current) => ({ ...current, twitch_client_id: event.target.value }))} placeholder="Aus der Twitch Developer Console" /></label>
+            <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noreferrer">TWITCH-APP ANLEGEN ↗</a>
           </div>
+          <p className="twitch-setup-note">Nur einmal nötig: Twitch-App als <b>Public Client</b> anlegen und die Client-ID einfügen. Kein Client-Secret und keine Redirect-URL erforderlich.</p>
           <div className={`connection-note ${twitchStatus.connected ? "connected" : ""}`}><i /> {twitchStatus.connected ? "TWITCH LIVE VERBUNDEN" : "TWITCH NICHT VERBUNDEN"} <span>{twitchStatus.message}{twitchStatus.login ? ` · Anmeldung: ${twitchStatus.login}` : ""}</span></div>
           <div className={`connection-note overlay-connection ${overlayConnectionCount > 0 ? "connected" : ""}`}><i /> {overlayConnectionCount > 0 ? "OBS-OVERLAY VERBUNDEN" : "OBS-OVERLAY NICHT VERBUNDEN"}<span>{overlayConnectionCount > 0 ? `${overlayConnectionCount} aktive Overlay-Verbindung${overlayConnectionCount === 1 ? "" : "en"}` : "OBS-Browserquelle öffnen oder Quelle aktualisieren."}</span></div>
-          <div className="integration-actions"><button type="button" onClick={saveIntegrationSettings}>ZUGANGSDATEN LOKAL SPEICHERN</button><button type="button" onClick={connectTwitch} disabled={!backendSettings.twitch_client_id || (!backendSettings.twitch_client_secret_set && !twitchSecretInput)}>MIT TWITCH ANMELDEN</button></div>
+          <div className="integration-actions"><button type="button" onClick={() => void connectTwitch()}>{twitchStatus.connected ? "TWITCH NEU VERBINDEN" : "MIT TWITCH VERBINDEN"}</button></div>
+          {twitchMessage && <p className="integration-message" aria-live="polite">{twitchMessage}</p>}
           <label className="field-label command-label" htmlFor="join-command">FREIER JOIN-BEFEHL</label>
           <div className="command-field"><input id="join-command" value={joinCommand} onChange={(event) => setJoinCommand(event.target.value)} placeholder="!join" /><button type="button" onClick={savePresentation}>SPEICHERN</button></div>
           <form className="incoming-chat-form" onSubmit={submitIncomingChat}>
@@ -2098,10 +2127,10 @@ export default function Home() {
             <label><span>REPOSITORY</span><input value={backendSettings.github_repo} onChange={(event) => setBackendSettings((current) => ({ ...current, github_repo: event.target.value }))} /></label>
             <label><span>LOKALER SERVER-PORT</span><input type="number" min="1024" max="65535" value={backendSettings.server_port} onChange={(event) => setBackendSettings((current) => ({ ...current, server_port: Number(event.target.value) }))} /></label>
           </div>
-          <p className="integration-note">Öffentliches Repository · Updateabruf ohne GitHub-Token · universelles Python-Paket<br />Portänderungen werden nach einem Neustart aktiv. Twitch Redirect: http://127.0.0.1:{backendSettings.server_port || 8766}/api/twitch/callback</p>
+          <p className="integration-note">Öffentliches Repository · Updateabruf ohne GitHub-Token · universelles Python-Paket<br />Portänderungen werden nach einem Neustart aktiv. Der neue Twitch-Geräte-Login benötigt keine Redirect-URL.</p>
           <label className="toggle-field"><input type="checkbox" checked={backendSettings.auto_update} onChange={(event) => setBackendSettings((current) => ({ ...current, auto_update: event.target.checked }))} /><span>Neue geprüfte Python-Releases automatisch installieren und neu starten</span></label>
           <div className={`update-card ${updateStatus.available ? "available" : ""}`}><div><span>INSTALLIERTE VERSION</span><b>v{appVersion}</b></div><p>{updateStatus.available ? `Version v${updateStatus.version} ist verfügbar.` : "Keine neuere geprüfte Version erkannt."}</p></div>
-          <div className="integration-actions"><button type="button" onClick={saveIntegrationSettings}>EINSTELLUNGEN SPEICHERN</button><button type="button" onClick={checkForUpdates}>JETZT PRÜFEN</button>{updateStatus.available && <button className="update-now" type="button" onClick={installUpdate}>UPDATE INSTALLIEREN</button>}</div>
+          <div className="integration-actions"><button type="button" onClick={() => void saveIntegrationSettings()}>EINSTELLUNGEN SPEICHERN</button><button type="button" onClick={checkForUpdates}>JETZT PRÜFEN</button>{updateStatus.available && <button className="update-now" type="button" onClick={installUpdate}>UPDATE INSTALLIEREN</button>}</div>
           {integrationMessage && <p className="integration-message">{integrationMessage}</p>}
         </section>
 

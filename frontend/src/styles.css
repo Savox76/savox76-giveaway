@@ -243,6 +243,13 @@ button:disabled { opacity: .36; cursor: not-allowed; }
 .integration-grid input, .secret-field input { min-width: 0; width: 100%; border: 1px solid rgba(82, 223, 244, .18); background: rgba(2, 9, 14, .7); color: #d9f1f5; outline: none; padding: 11px; font: 550 10px var(--font-geist-mono), monospace; letter-spacing: 0; }
 .integration-grid input:focus, .secret-field input:focus { border-color: rgba(82, 223, 244, .55); }
 .secret-field { margin-top: 12px; }
+.twitch-device-setup { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; margin-top: 12px; }
+.twitch-device-setup label { display: grid; gap: 6px; color: #607c85; font: 600 8px var(--font-geist-mono), monospace; letter-spacing: .1em; }
+.twitch-device-setup input { min-width: 0; width: 100%; border: 1px solid rgba(82, 223, 244, .18); background: rgba(2, 9, 14, .7); color: #d9f1f5; outline: none; padding: 11px; font: 550 10px var(--font-geist-mono), monospace; letter-spacing: 0; }
+.twitch-device-setup input:focus { border-color: rgba(82, 223, 244, .55); }
+.twitch-device-setup a { display: grid; place-items: center; min-height: 36px; padding: 0 11px; border: 1px solid rgba(145, 70, 255, .3); background: rgba(145, 70, 255, .07); color: #b994f5; text-decoration: none; font: 650 7px var(--font-geist-mono), monospace; letter-spacing: .08em; }
+.twitch-setup-note { margin: 8px 0 0; color: #536f78; font: 500 8px/1.5 var(--font-geist-mono), monospace; }
+.twitch-setup-note b { color: #809aa1; }
 .integration-note { margin: 12px 0 0; color: #6d929b; font: 550 8px/1.55 var(--font-geist-mono), monospace; }
 .integration-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
 .integration-actions button { min-height: 34px; padding: 0 12px; border: 1px solid rgba(82, 223, 244, .22); background: rgba(82, 223, 244, .055); color: #8bc8d1; font: 650 8px var(--font-geist-mono), monospace; letter-spacing: .08em; cursor: pointer; }
@@ -313,7 +320,7 @@ button:disabled { opacity: .36; cursor: not-allowed; }
   .debug-history-row small { display: none; }
   .incoming-chat-form > div { grid-template-columns: 1fr 1fr; }
   .incoming-chat-form button { grid-column: 1 / -1; min-height: 34px; }
-  .integration-grid, .update-card { grid-template-columns: 1fr; }
+  .integration-grid, .update-card, .twitch-device-setup { grid-template-columns: 1fr; }
   .winner-card { top: 45%; width: min(var(--winner-card-width, 600px), calc(100vw - 24px)); padding: 25px 28px; }
   .winner-card h2 { width: calc(100% - 12px); font-size: clamp(24px, min(10vw, var(--winner-name-size, 45px)), 45px); letter-spacing: .045em; }
   .left-hud { left: 14px; }

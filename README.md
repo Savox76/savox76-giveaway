@@ -43,8 +43,8 @@ entpackt sein.
 
 Der Server lauscht ausschließlich auf `127.0.0.1` und ist nicht öffentlich oder im Heimnetz
 erreichbar. Der Port lässt sich unter **GitHub & Updates** ändern. Nach dem Speichern muss das
-Tool neu gestartet werden; anschließend müssen auch die OBS-Adresse und die OAuth Redirect URL
-bei Twitch auf den gewählten Port angepasst werden.
+Tool neu gestartet und die OBS-Adresse auf den gewählten Port angepasst werden. Der Twitch-
+Geräte-Login ist unabhängig vom lokalen Port.
 
 ## Control, OBS und Sounds
 
@@ -94,8 +94,10 @@ den manuellen Download des neuen Python-ZIPs. Ab `v0.2.0` funktionieren weitere 
 ## Twitch einmalig einrichten
 
 Die Twitch-Anbindung verwendet EventSub WebSocket und die Helix Chat API. Die Anleitung steht in
-[docs/TWITCH_SETUP.md](docs/TWITCH_SETUP.md). Als OAuth Redirect URL muss exakt
-`http://127.0.0.1:8766/api/twitch/callback` eingetragen werden.
+[docs/TWITCH_SETUP.md](docs/TWITCH_SETUP.md). Ab Version 0.2.9 wird der offizielle Twitch-Geräte-
+Login verwendet: Client-ID eintragen, **Mit Twitch verbinden** anklicken und den Zugriff im
+geöffneten Twitch-Fenster bestätigen. Ein Client-Secret und eine OAuth Redirect URL werden nicht
+mehr benötigt.
 
 ## Entwicklung
 

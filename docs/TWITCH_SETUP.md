@@ -1,14 +1,16 @@
 # Twitch einmalig einrichten
 
-1. In der Twitch Developer Console eine Anwendung anlegen.
-2. Als OAuth Redirect URL exakt `http://127.0.0.1:8766/api/twitch/callback` eintragen.
-3. Kategorie `Application Integration` verwenden.
-4. Client-ID und Client-Secret in der lokalen Control-Ansicht speichern.
-5. `Mit Twitch anmelden` wählen und den Zugriff bestätigen.
+1. In der [Twitch Developer Console](https://dev.twitch.tv/console/apps) eine Anwendung anlegen.
+2. Als Kategorie `Application Integration` und als Client-Typ `Public` verwenden.
+3. Die angezeigte Client-ID in der lokalen Control-Ansicht eintragen.
+4. `Mit Twitch verbinden` wählen.
+5. Im automatisch geöffneten Twitch-Fenster den Zugriff bestätigen. Das Tool erkennt die
+   Freigabe und verbindet den Chat selbstständig.
 
 Das Tool fordert ausschließlich `user:read:chat` und `user:write:chat` an. Damit liest es
 Join- und Claim-Nachrichten und sendet Giveaway-Bestätigungen in den verbundenen Kanal.
 
-Wenn der lokale Server-Port im Kontrollpanel geändert wird, muss dieselbe Portnummer auch in der
-OAuth Redirect URL der Twitch Developer Console stehen. Die Änderung wird nach einem Neustart des
-Tools aktiv.
+Der Geräte-Login benötigt weder ein Client-Secret noch eine OAuth Redirect URL. Die Client-ID ist
+keine geheime Zugangsinformation; Twitch-Tokens bleiben weiterhin ausschließlich im sicheren
+Schlüsselspeicher des eigenen Betriebssystems. Eine Portänderung hat keinen Einfluss mehr auf die
+Twitch-Anmeldung.

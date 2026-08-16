@@ -233,23 +233,26 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
         await app_state.twitch.restart()
         return await get_settings()
 
-    @app.get("/api/twitch/login")
-    async def twitch_login() -> RedirectResponse:
+    @app.get("/api/twitch/login", response_model=None)
+    async def twitch_login() -> RedirectResponse | HTMLResponse:
         try:
-            url = app_state.twitch.authorization_url()
-        except RuntimeError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            url = await app_state.twitch.start_device_authorization()
+        except Exception as exc:
+            return HTMLResponse(
+                _callback_page("Twitch-Anmeldung konnte nicht starten", str(exc)),
+                status_code=400,
+            )
         return RedirectResponse(url)
 
     @app.get("/api/twitch/callback")
-    async def twitch_callback(code: str = "", state: str = "", error: str = "") -> HTMLResponse:
-        if error:
-            return HTMLResponse(_callback_page("Twitch-Anmeldung abgebrochen", error), status_code=400)
-        try:
-            await app_state.twitch.finish_authorization(code, state)
-        except Exception as exc:
-            return HTMLResponse(_callback_page("Twitch-Anmeldung fehlgeschlagen", str(exc)), status_code=400)
-        return HTMLResponse(_callback_page("Twitch verbunden", "Dieses Fenster kann geschlossen werden."))
+    async def twitch_callback() -> HTMLResponse:
+        return HTMLResponse(
+            _callback_page(
+                "Neue Twitch-Anmeldung aktiv",
+                "Bitte im Kontrollfenster auf Mit Twitch verbinden klicken. "
+                "Eine Redirect-URL wird nicht mehr benötigt.",
+            )
+        )
 
     @app.post("/api/twitch/reconnect")
     async def twitch_reconnect() -> dict[str, Any]:
