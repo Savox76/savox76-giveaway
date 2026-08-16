@@ -38,7 +38,7 @@ entpackt sein.
 ## Lokale Adressen
 
 - Steuerung: `http://127.0.0.1:8766/control`
-- Theme-Steuerung: `http://127.0.0.1:8766/themes`
+- optionale direkte Theme-Ansicht: `http://127.0.0.1:8766/themes`
 - OBS-Browserquelle: `http://127.0.0.1:8766/overlay`
 - empfohlene OBS-Größe: 1920 × 1080
 
@@ -67,8 +67,10 @@ wiederhergestellt.
 
 ## Event-Themes
 
-Die separate Seite `/themes` ist über den Button **THEMES** erreichbar. Sie hält die normale
-Control-Seite übersichtlich und bietet fünf sofort umschaltbare Designs:
+Oben auf der normalen `/control`-Seite öffnet der Button **THEMES** eine eigene ausklappbare
+Theme-Steuerung neben dem bestehenden **CONTROL**-Menü. Dadurch bleiben die Toolsettings
+übersichtlich, ohne dass dafür die Seite gewechselt werden muss. Optional ist dieselbe Auswahl
+auch direkt unter `/themes` erreichbar. Zur Verfügung stehen fünf sofort umschaltbare Designs:
 
 - Standard – das bisherige Layout unverändert
 - Ostern

@@ -1105,6 +1105,7 @@ export default function Home() {
   const [soundOn, setSoundOn] = useState(true);
   const [themeId, setThemeId] = useState<ThemeId>("standard");
   const [controlOpen, setControlOpen] = useState(!overlayOnly && !themesOnly);
+  const [themeOpen, setThemeOpen] = useState(themesOnly);
   const [debugOpen, setDebugOpen] = useState(false);
   const [joinName, setJoinName] = useState("");
   const [chatSender, setChatSender] = useState("");
@@ -1124,7 +1125,7 @@ export default function Home() {
   const [twitchMessage, setTwitchMessage] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.3.0");
+  const [appVersion, setAppVersion] = useState("0.3.1");
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
   const [clientId] = useState(() => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `client-${Date.now()}-${Math.random()}`);
@@ -1544,9 +1545,9 @@ export default function Home() {
             <a className="control-button surface-link" href="/control">CONTROL</a>
           ) : !overlayOnly ? (
             <>
-              <a className="theme-button surface-link" href="/themes">THEMES</a>
-              <button className={`debug-button ${debugOpen ? "active" : ""}`} type="button" onClick={() => { setControlOpen(false); setDebugOpen((value) => !value); }}>DEBUG</button>
-              <button className="control-button" type="button" onClick={() => { setDebugOpen(false); setControlOpen(true); }}>CONTROL</button>
+              <button className={`theme-button ${themeOpen ? "active" : ""}`} type="button" onClick={() => { setControlOpen(false); setDebugOpen(false); setThemeOpen((value) => !value); }}>THEMES</button>
+              <button className={`debug-button ${debugOpen ? "active" : ""}`} type="button" onClick={() => { setControlOpen(false); setThemeOpen(false); setDebugOpen((value) => !value); }}>DEBUG</button>
+              <button className="control-button" type="button" onClick={() => { setDebugOpen(false); setThemeOpen(false); setControlOpen(true); }}>CONTROL</button>
             </>
           ) : null}
         </div>
@@ -1610,12 +1611,16 @@ export default function Home() {
         <div className="countdown"><span>RUNDE</span><strong>{String(round).padStart(2, "0")}</strong></div>
       </section>
 
-      {themesOnly && (
+      <div className={`theme-scrim ${themeOpen && !themesOnly ? "open" : ""}`} onClick={() => setThemeOpen(false)} />
+      {(themesOnly || themeOpen) && (
         <aside className="theme-panel glass-panel">
           <div className="theme-panel-head">
-            <p className="panel-kicker">EVENT-DARSTELLUNG</p>
-            <h2>THEME CONTROL</h2>
-            <p>Wähle das Design für Control und OBS. Der Wechsel wird sofort serverweit gespeichert.</p>
+            <div>
+              <p className="panel-kicker">EVENT-DARSTELLUNG</p>
+              <h2>THEME CONTROL</h2>
+              <p>Wähle das Design für Control und OBS. Der Wechsel wird sofort serverweit gespeichert.</p>
+            </div>
+            <button type="button" onClick={() => themesOnly ? window.location.assign("/control") : setThemeOpen(false)} aria-label="Theme-Steuerung schließen">×</button>
           </div>
           <div className="theme-grid">
             {EVENT_THEMES.map((theme) => (
