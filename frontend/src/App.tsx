@@ -1125,7 +1125,7 @@ export default function Home() {
   const [twitchMessage, setTwitchMessage] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.3.1");
+  const [appVersion, setAppVersion] = useState("0.3.2");
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
   const [clientId] = useState(() => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `client-${Date.now()}-${Math.random()}`);
@@ -1536,7 +1536,7 @@ export default function Home() {
       <header className="topbar glass-panel">
         <div className="brand-lockup">
           <div className="brand-mark"><span>S</span></div>
-          <div><p className="eyebrow">SAVOX76 // GIVEAWAY SYSTEM</p><h1>{arenaTitle}</h1></div>
+          <div><p className="eyebrow">SAVOX76 // GIVEAWAY SYSTEM {!overlayOnly && <span className="version-label">v{appVersion}</span>}</p><h1>{arenaTitle}</h1></div>
         </div>
         <div className="status-cluster">
           <div className={`status-pill status-${phase}`}><i /> {phaseLabel}</div>

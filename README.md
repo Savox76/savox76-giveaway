@@ -29,11 +29,17 @@ Unter Linux oder macOS kann der Python-Befehl `python3` heißen. Beim ersten Sta
 Programmordner automatisch eine abgeschlossene `.venv`-Umgebung erstellt und mit allen benötigten
 Python-Paketen eingerichtet. Danach öffnet sich die lokale Steuerung im Browser.
 
+Vor dem Browserstart prüft das Tool zuerst die aktuelle GitHub-Version. Liegt ein automatisches
+Update vor, wird es geprüft und installiert, bevor der lokale Server und das Control-Fenster
+starten. Dadurch öffnet sich nur ein Browserfenster mit der tatsächlich aktuellen Version. Ist
+GitHub vorübergehend nicht erreichbar, startet der Server weiter, öffnet den Browser aber nicht
+automatisch; die angezeigte Control-Adresse kann dann bei Bedarf manuell aufgerufen werden.
+
 Das Terminal bleibt während der Nutzung geöffnet und zeigt die aktiven Adressen an. Falls der
 Start fehlschlägt, bleibt das Fenster unter Windows ebenfalls geöffnet. Die genaue Fehlermeldung
 wird zusätzlich als `Savox76Giveaway.log` direkt im Programmordner gespeichert. Das Python-Skript
 darf nicht direkt innerhalb der ZIP-Vorschau gestartet werden; das Archiv muss vollständig
-entpackt sein.
+entpackt sein. Die installierte Version steht zusätzlich oben links in der Control-Ansicht.
 
 ## Lokale Adressen
 

@@ -94,6 +94,7 @@ button { font: inherit; }
 .brand-mark { display: grid; place-items: center; width: 46px; height: 46px; transform: rotate(45deg); border: 1px solid rgba(89, 226, 246, .5); background: rgba(36, 191, 214, .08); box-shadow: 0 0 25px rgba(44, 210, 233, .14); }
 .brand-mark span { transform: rotate(-45deg); color: var(--cyan); font-size: 23px; font-weight: 900; }
 .eyebrow, .panel-kicker { margin: 0; color: #718f99; font: 600 10px/1.3 var(--font-geist-mono), monospace; letter-spacing: .2em; }
+.version-label { display: inline-block; margin-left: 8px; color: #4f6d76; font-size: 8px; letter-spacing: .08em; vertical-align: 1px; }
 .brand-lockup h1 { margin: 3px 0 0; font-size: clamp(20px, 2vw, 29px); line-height: 1; letter-spacing: .18em; font-weight: 750; }
 .status-cluster { display: flex; align-items: center; gap: 13px; }
 .status-pill { color: #b8eff7; border: 1px solid rgba(74, 226, 151, .2); background: rgba(27, 110, 71, .08); padding: 9px 13px; font: 650 10px/1 var(--font-geist-mono), monospace; letter-spacing: .14em; }
