@@ -1143,7 +1143,7 @@ export default function Home() {
   const [twitchMessage, setTwitchMessage] = useState("");
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.2.9");
+  const [appVersion, setAppVersion] = useState("0.2.10");
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
   const [arenaReady, setArenaReady] = useState(false);
@@ -2071,7 +2071,7 @@ export default function Home() {
             <label htmlFor="twitch-client-id"><span>TWITCH CLIENT-ID</span><input id="twitch-client-id" value={backendSettings.twitch_client_id} onChange={(event) => setBackendSettings((current) => ({ ...current, twitch_client_id: event.target.value }))} placeholder="Aus der Twitch Developer Console" /></label>
             <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noreferrer">TWITCH-APP ANLEGEN ↗</a>
           </div>
-          <p className="twitch-setup-note">Nur einmal nötig: Twitch-App als <b>Public Client</b> anlegen und die Client-ID einfügen. Kein Client-Secret und keine Redirect-URL erforderlich.</p>
+          <p className="twitch-setup-note">Nur einmal nötig: Twitch-App als <b>Public Client</b> anlegen und die Client-ID einfügen. Kein Client-Secret. Falls Twitch eine Redirect URL verlangt: <b>http://localhost</b></p>
           <div className={`connection-note ${twitchStatus.connected ? "connected" : ""}`}><i /> {twitchStatus.connected ? "TWITCH LIVE VERBUNDEN" : "TWITCH NICHT VERBUNDEN"} <span>{twitchStatus.message}{twitchStatus.login ? ` · Anmeldung: ${twitchStatus.login}` : ""}</span></div>
           <div className={`connection-note overlay-connection ${overlayConnectionCount > 0 ? "connected" : ""}`}><i /> {overlayConnectionCount > 0 ? "OBS-OVERLAY VERBUNDEN" : "OBS-OVERLAY NICHT VERBUNDEN"}<span>{overlayConnectionCount > 0 ? `${overlayConnectionCount} aktive Overlay-Verbindung${overlayConnectionCount === 1 ? "" : "en"}` : "OBS-Browserquelle öffnen oder Quelle aktualisieren."}</span></div>
           <div className="integration-actions"><button type="button" onClick={() => void connectTwitch()}>{twitchStatus.connected ? "TWITCH NEU VERBINDEN" : "MIT TWITCH VERBINDEN"}</button></div>

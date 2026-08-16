@@ -94,10 +94,11 @@ den manuellen Download des neuen Python-ZIPs. Ab `v0.2.0` funktionieren weitere 
 ## Twitch einmalig einrichten
 
 Die Twitch-Anbindung verwendet EventSub WebSocket und die Helix Chat API. Die Anleitung steht in
-[docs/TWITCH_SETUP.md](docs/TWITCH_SETUP.md). Ab Version 0.2.9 wird der offizielle Twitch-Geräte-
+[docs/TWITCH_SETUP.md](docs/TWITCH_SETUP.md). Ab Version 0.2.10 wird der offizielle Twitch-Geräte-
 Login verwendet: Client-ID eintragen, **Mit Twitch verbinden** anklicken und den Zugriff im
-geöffneten Twitch-Fenster bestätigen. Ein Client-Secret und eine OAuth Redirect URL werden nicht
-mehr benötigt.
+geöffneten Twitch-Fenster bestätigen. Ein Client-Secret wird nicht benötigt. Falls Twitch beim
+Anlegen der App eine OAuth Redirect URL verlangt, genügt `http://localhost`; der Geräte-Login
+verwendet sie nicht.
 
 ## Entwicklung
 
