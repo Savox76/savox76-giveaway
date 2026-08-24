@@ -1135,7 +1135,7 @@ export default function Home() {
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
   const [errorReport, setErrorReport] = useState<ErrorReportStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.3.6");
+  const [appVersion, setAppVersion] = useState("0.3.7");
   const [serverConnected, setServerConnected] = useState(false);
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
