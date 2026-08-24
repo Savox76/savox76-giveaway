@@ -1135,7 +1135,7 @@ export default function Home() {
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
   const [errorReport, setErrorReport] = useState<ErrorReportStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.3.5");
+  const [appVersion, setAppVersion] = useState("0.3.6");
   const [serverConnected, setServerConnected] = useState(false);
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
@@ -1620,7 +1620,9 @@ export default function Home() {
           <div className="status-widget-copy">
             <p>SAVOX76 // GIVEAWAY</p>
             <strong><i />GIVEAWAY {statusActive ? "AKTIV" : "INAKTIV"}</strong>
-            <small>{statusDetail}</small>
+            {phase === "registration" && serverConnected
+              ? <small className="status-widget-join">JETZT <b>{joinCommand}</b> IM CHAT</small>
+              : <small>{statusDetail}</small>}
           </div>
           <div className="status-widget-members">
             <strong>{String(combatants.length).padStart(2, "0")}</strong>

@@ -71,8 +71,10 @@ weitergerechnet; beim erneuten Einblenden erscheint sofort der aktuelle Stand.
 
 Die zusätzliche Browserquelle `/status` ist für eine Ecke des normalen Streamlayouts gedacht.
 Sie besitzt einen transparenten Außenbereich und zeigt kompakt, ob das Giveaway aktiv oder
-inaktiv ist, sowie die aktuelle Teilnehmerzahl. Sie aktualisiert sich direkt über den
-serverseitigen Zustand, lädt keine 3D-Arena und bleibt dadurch besonders ressourcenschonend.
+inaktiv ist, sowie die aktuelle Teilnehmerzahl. Solange die Anmeldung offen ist, erscheint dort
+zusätzlich der aktuell eingestellte Chatbefehl zum Beitreten; nach Anmeldeschluss verschwindet
+dieser Hinweis automatisch. Die Anzeige aktualisiert sich direkt über den serverseitigen Zustand,
+lädt keine 3D-Arena und bleibt dadurch besonders ressourcenschonend.
 
 Oben im Control-Fenster zeigt eine zusätzliche Twitch-Ampel den tatsächlichen Betriebszustand:
 Rot bedeutet keine Chatverbindung, Orange einen verbundenen Twitch-Chat bei offline geschaltetem
