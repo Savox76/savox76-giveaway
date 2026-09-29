@@ -12,7 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 import websockets
 
-from .config import ConfigStore
+from .config import TWITCH_CLIENT_ID, ConfigStore
 from .events import EventBus
 from .secrets import SecretStore
 
@@ -67,7 +67,7 @@ class TwitchService:
     def refresh_configuration_status(self) -> None:
         settings = self.config.load()
         has_token = bool(self.secrets_store.get("twitch_access_token"))
-        self.status.configured = bool(settings.twitch_client_id and settings.channel_login)
+        self.status.configured = bool(settings.channel_login)
         self.status.authenticated = has_token
         self.status.channel = settings.channel_login
         if not self.status.configured:
@@ -78,14 +78,11 @@ class TwitchService:
             self.status.message = "Twitch-Anmeldung erforderlich"
 
     async def start_device_authorization(self) -> str:
-        settings = self.config.load()
-        if not settings.twitch_client_id:
-            raise RuntimeError("Twitch Client-ID fehlt.")
         await self._cancel_device_authorization()
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(
                 TWITCH_DEVICE_URL,
-                data={"client_id": settings.twitch_client_id, "scopes": " ".join(TWITCH_SCOPES)},
+                data={"client_id": TWITCH_CLIENT_ID, "scopes": " ".join(TWITCH_SCOPES)},
             )
         if response.is_error:
             raise RuntimeError(f"Twitch-Geräteanmeldung fehlgeschlagen: {self._response_error(response)}")
@@ -111,15 +108,12 @@ class TwitchService:
 
     async def _poll_device_authorization(self, device_code: str, expires_in: int, interval: int) -> None:
         current_task = asyncio.current_task()
-        settings = self.config.load()
         data = {
-            "client_id": settings.twitch_client_id,
+            "client_id": TWITCH_CLIENT_ID,
             "device_code": device_code,
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             "scopes": " ".join(TWITCH_SCOPES),
         }
-        if client_secret := self.secrets_store.get("twitch_client_secret"):
-            data["client_secret"] = client_secret
         loop = asyncio.get_running_loop()
         deadline = loop.time() + expires_in
         try:
@@ -261,7 +255,6 @@ class TwitchService:
         return payload
 
     async def _refresh_token(self) -> None:
-        settings = self.config.load()
         refresh_token = self.secrets_store.get("twitch_refresh_token")
         if not refresh_token:
             self.status.authenticated = False
@@ -269,10 +262,8 @@ class TwitchService:
         data = {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
-            "client_id": settings.twitch_client_id,
+            "client_id": TWITCH_CLIENT_ID,
         }
-        if client_secret := self.secrets_store.get("twitch_client_secret"):
-            data["client_secret"] = client_secret
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(TWITCH_TOKEN_URL, data=data)
             response.raise_for_status()
@@ -281,10 +272,9 @@ class TwitchService:
         self.secrets_store.set("twitch_refresh_token", payload.get("refresh_token", refresh_token))
 
     def _api_headers(self) -> dict[str, str]:
-        settings = self.config.load()
         return {
             "Authorization": f"Bearer {self.secrets_store.get('twitch_access_token')}",
-            "Client-Id": settings.twitch_client_id,
+            "Client-Id": TWITCH_CLIENT_ID,
             "Content-Type": "application/json",
         }
 

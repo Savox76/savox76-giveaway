@@ -1,5 +1,5 @@
 import pytest
-from savox_giveaway.config import AppSettings, ConfigStore
+from savox_giveaway.config import TWITCH_CLIENT_ID, AppSettings, ConfigStore
 from savox_giveaway.events import EventBus
 from savox_giveaway.twitch import TwitchService
 
@@ -17,7 +17,7 @@ class MemorySecrets:
 
 def test_public_client_is_configured_without_secret(tmp_path):
     config = ConfigStore(tmp_path / "config.json")
-    config.save(AppSettings(channel_login="savox76", twitch_client_id="public-client-id"))
+    config.save(AppSettings(channel_login="savox76"))
 
     service = TwitchService(config, MemorySecrets(), EventBus())
 
@@ -41,7 +41,7 @@ def test_status_contains_live_state(tmp_path):
 @pytest.mark.asyncio
 async def test_live_status_uses_twitch_streams_endpoint(tmp_path, monkeypatch):
     config = ConfigStore(tmp_path / "config.json")
-    config.save(AppSettings(channel_login="savox76", twitch_client_id="public-client-id"))
+    config.save(AppSettings(channel_login="savox76"))
     secrets = MemorySecrets()
     secrets.set("twitch_access_token", "access-token")
     service = TwitchService(config, secrets, EventBus())
@@ -80,8 +80,9 @@ async def test_live_status_uses_twitch_streams_endpoint(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_device_login_needs_only_client_id(tmp_path, monkeypatch):
     config = ConfigStore(tmp_path / "config.json")
-    config.save(AppSettings(channel_login="savox76", twitch_client_id="public-client-id"))
+    config.save(AppSettings(channel_login="savox76"))
     service = TwitchService(config, MemorySecrets(), EventBus())
+    requests = []
 
     class FakeResponse:
         is_error = False
@@ -103,7 +104,8 @@ async def test_device_login_needs_only_client_id(tmp_path, monkeypatch):
         async def __aexit__(self, *_):
             return None
 
-        async def post(self, *_args, **_kwargs):
+        async def post(self, *_args, **kwargs):
+            requests.append(kwargs["data"])
             return FakeResponse()
 
     async def fake_poll(self, _device_code, _expires_in, _interval):
@@ -117,6 +119,7 @@ async def test_device_login_needs_only_client_id(tmp_path, monkeypatch):
 
     assert url == "https://www.twitch.tv/activate?public=true&device-code=ABCDEFGH"
     assert service.status.message.endswith("Code ABCDEFGH")
+    assert requests == [{"client_id": TWITCH_CLIENT_ID, "scopes": "user:read:chat user:write:chat"}]
 
 
 @pytest.mark.asyncio
