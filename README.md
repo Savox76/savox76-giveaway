@@ -160,10 +160,9 @@ sendet das Issue anschließend selbst ab; im Tool ist dafür kein GitHub-Schreib
 
 Die Twitch-Anbindung verwendet EventSub WebSocket und die Helix Chat API. Die Anleitung steht in
 [docs/TWITCH_SETUP.md](docs/TWITCH_SETUP.md). Ab Version 0.2.10 wird der offizielle Twitch-Geräte-
-Login verwendet: Client-ID eintragen, **Mit Twitch verbinden** anklicken und den Zugriff im
-geöffneten Twitch-Fenster bestätigen. Ein Client-Secret wird nicht benötigt. Falls Twitch beim
-Anlegen der App eine OAuth Redirect URL verlangt, genügt `http://localhost`; der Geräte-Login
-verwendet sie nicht.
+Login verwendet. Die Twitch-Anwendung und ihre öffentliche Client-ID sind bereits fest integriert:
+Kanalnamen speichern, **Mit Twitch verbinden** anklicken und den Zugriff im geöffneten Twitch-
+Fenster bestätigen. Ein Client-Secret wird nicht benötigt.
 
 ## Entwicklung
 

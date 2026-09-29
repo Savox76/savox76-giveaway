@@ -4,7 +4,7 @@ import keyring
 from keyring.errors import KeyringError
 
 SERVICE = "Savox76Giveaway"
-KNOWN_KEYS = {"twitch_client_secret", "twitch_access_token", "twitch_refresh_token"}
+KNOWN_KEYS = {"twitch_access_token", "twitch_refresh_token"}
 
 
 class SecretStore:

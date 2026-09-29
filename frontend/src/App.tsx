@@ -71,8 +71,6 @@ type ErrorReportStatus = {
 
 type BackendSettings = {
   channel_login: string;
-  twitch_client_id: string;
-  twitch_client_secret_set: boolean;
   server_port: number;
   auto_update: boolean;
   open_browser_on_start: boolean;
@@ -122,8 +120,6 @@ const EMPTY_TWITCH_STATUS: TwitchStatus = {
 
 const DEFAULT_BACKEND_SETTINGS: BackendSettings = {
   channel_login: "savox76",
-  twitch_client_id: "",
-  twitch_client_secret_set: false,
   server_port: 8766,
   auto_update: true,
   open_browser_on_start: true,
@@ -1135,7 +1131,7 @@ export default function Home() {
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ available: false });
   const [errorReport, setErrorReport] = useState<ErrorReportStatus>({ available: false });
-  const [appVersion, setAppVersion] = useState("0.3.7");
+  const [appVersion, setAppVersion] = useState("0.3.8");
   const [serverConnected, setServerConnected] = useState(false);
   const [overlayConnectionCount, setOverlayConnectionCount] = useState(0);
   const [winnerLeaders, setWinnerLeaders] = useState<WinnerLeader[]>([]);
@@ -1384,8 +1380,6 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           channel_login: channel,
-          twitch_client_id: backendSettings.twitch_client_id,
-          twitch_client_secret: null,
           server_port: backendSettings.server_port,
           auto_update: backendSettings.auto_update,
           open_browser_on_start: backendSettings.open_browser_on_start,
@@ -1407,11 +1401,6 @@ export default function Home() {
   };
 
   const connectTwitch = async () => {
-    if (!backendSettings.twitch_client_id.trim()) {
-      setTwitchMessage("Bitte zuerst deine Twitch Client-ID eintragen. Ein Client-Secret ist nicht erforderlich.");
-      document.getElementById("twitch-client-id")?.focus();
-      return;
-    }
     const authWindow = window.open("", "savox76-twitch", "width=720,height=820");
     if (!authWindow) {
       setTwitchMessage("Das Twitch-Fenster wurde vom Browser blockiert. Bitte Pop-ups für 127.0.0.1 erlauben.");
@@ -1846,11 +1835,7 @@ export default function Home() {
           <div className="channel-field">
             <span>#</span><input id="channel" value={channel} onChange={(event) => setChannel(event.target.value)} /><button type="button" onClick={() => void saveIntegrationSettings("twitch")}>SPEICHERN</button>
           </div>
-          <div className="twitch-device-setup">
-            <label htmlFor="twitch-client-id"><span>TWITCH CLIENT-ID</span><input id="twitch-client-id" value={backendSettings.twitch_client_id} onChange={(event) => setBackendSettings((current) => ({ ...current, twitch_client_id: event.target.value }))} placeholder="Aus der Twitch Developer Console" /></label>
-            <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noreferrer">TWITCH-APP ANLEGEN ↗</a>
-          </div>
-          <p className="twitch-setup-note">Nur einmal nötig: Twitch-App als <b>Public Client</b> anlegen und die Client-ID einfügen. Kein Client-Secret. Falls Twitch eine Redirect URL verlangt: <b>http://localhost</b></p>
+          <p className="twitch-setup-note">Die Twitch-Anwendung ist bereits integriert. Kanal speichern und anschließend <b>Mit Twitch verbinden</b> wählen.</p>
           <div className={`connection-note ${twitchStatus.connected ? "connected" : ""}`}><i /> {twitchStatus.connected ? "TWITCH LIVE VERBUNDEN" : "TWITCH NICHT VERBUNDEN"} <span>{twitchStatus.message}{twitchStatus.login ? ` · Anmeldung: ${twitchStatus.login}` : ""}</span></div>
           <div className={`connection-note overlay-connection ${overlayConnectionCount > 0 ? "connected" : ""}`}><i /> {overlayConnectionCount > 0 ? "OBS-OVERLAY VERBUNDEN" : "OBS-OVERLAY NICHT VERBUNDEN"}<span>{overlayConnectionCount > 0 ? `${overlayConnectionCount} aktive Overlay-Verbindung${overlayConnectionCount === 1 ? "" : "en"}` : "OBS-Browserquelle öffnen oder Quelle aktualisieren."}</span></div>
           <div className="integration-actions"><button type="button" onClick={() => void connectTwitch()}>{twitchStatus.connected ? "TWITCH NEU VERBINDEN" : "MIT TWITCH VERBINDEN"}</button></div>

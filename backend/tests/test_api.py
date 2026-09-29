@@ -21,7 +21,7 @@ def test_local_surfaces_and_status(tmp_path):
 
     status = client.get("/api/status")
     assert status.status_code == 200
-    assert status.json()["version"] == "0.3.7"
+    assert status.json()["version"] == "0.3.8"
     assert status.json()["mode"] == "python"
     assert status.json()["twitch"]["connected"] is False
     assert status.json()["error_report"]["available"] is False
@@ -52,6 +52,8 @@ def test_server_port_can_be_saved(tmp_path):
     assert response.json()["twitch_redirect_uri"] == "http://127.0.0.1:9010/api/twitch/callback"
     assert "github_owner" not in response.json()
     assert "github_repo" not in response.json()
+    assert "twitch_client_id" not in response.json()
+    assert "twitch_client_secret_set" not in response.json()
 
 
 def test_frontend_error_creates_sanitized_prefilled_issue(tmp_path):

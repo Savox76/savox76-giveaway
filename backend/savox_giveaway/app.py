@@ -38,8 +38,6 @@ def frontend_directory() -> Path:
 
 class SettingsPayload(BaseModel):
     channel_login: str = Field(default="savox76", max_length=25)
-    twitch_client_id: str = Field(default="", max_length=80)
-    twitch_client_secret: str | None = Field(default=None, max_length=200)
     server_port: int = Field(default=DEFAULT_SERVER_PORT, ge=1024, le=65535)
     auto_update: bool = True
     open_browser_on_start: bool = True
@@ -295,22 +293,17 @@ def create_app(state: ApplicationState | None = None) -> FastAPI:
     @app.get("/api/settings")
     async def get_settings() -> dict[str, Any]:
         settings = app_state.config.load()
-        payload = asdict(settings)
-        payload["twitch_client_secret_set"] = bool(app_state.secrets.get("twitch_client_secret"))
-        return payload
+        return asdict(settings)
 
     @app.put("/api/settings")
     async def save_settings(payload: SettingsPayload) -> dict[str, Any]:
         settings = AppSettings(
             channel_login=payload.channel_login,
-            twitch_client_id=payload.twitch_client_id,
             server_port=payload.server_port,
             auto_update=payload.auto_update,
             open_browser_on_start=payload.open_browser_on_start,
         )
         app_state.config.save(settings)
-        if payload.twitch_client_secret is not None:
-            app_state.secrets.set("twitch_client_secret", payload.twitch_client_secret.strip())
         app_state.twitch.refresh_configuration_status()
         await app_state.twitch.restart()
         return await get_settings()

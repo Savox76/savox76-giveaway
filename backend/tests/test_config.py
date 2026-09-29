@@ -9,11 +9,9 @@ def test_config_roundtrip_and_normalization(tmp_path):
     saved = store.save(
         AppSettings(
             channel_login="#Savox76",
-            twitch_client_id=" client-id ",
         )
     )
     assert saved.channel_login == "savox76"
-    assert store.load().twitch_client_id == "client-id"
     stored = json.loads(path.read_text(encoding="utf-8"))
     assert stored["auto_update"] is True
     assert stored["server_port"] == 8766
@@ -54,6 +52,20 @@ def test_old_editable_update_source_is_removed_when_config_is_saved(tmp_path):
 
     assert "github_owner" not in stored
     assert "github_repo" not in stored
+
+
+def test_old_editable_twitch_client_id_is_removed_when_config_is_saved(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"channel_login":"Test","twitch_client_id":"legacy-client-id"}',
+        encoding="utf-8",
+    )
+
+    store = ConfigStore(path)
+    store.save(store.load())
+    stored = json.loads(path.read_text(encoding="utf-8"))
+
+    assert "twitch_client_id" not in stored
 
 
 def test_legacy_config_moves_to_new_default_port(tmp_path):
